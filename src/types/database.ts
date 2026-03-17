@@ -42,9 +42,18 @@ export interface Session {
 
 export interface Student {
   id: string
-  name: string
+  name: string           // legacy field — use first_name + last_name for new records
+  first_name: string | null
+  last_name: string | null
+  company: string | null
+  customer_type: string | null
+  date_of_birth: string | null
   email: string | null
-  phone: string | null
+  mobile: string | null
+  phone: string | null   // legacy — kept for old records
+  address: string | null
+  plz: string | null
+  city: string | null
   notes: string | null
   is_active: boolean
   created_at: string

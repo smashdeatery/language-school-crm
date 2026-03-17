@@ -13,13 +13,30 @@ import { useRouter } from 'next/navigation'
 import { ArrowLeft, Pencil, Trash2 } from 'lucide-react'
 
 interface Student {
-  id: string; name: string; email: string | null
-  phone: string | null; notes: string | null
+  id: string
+  name: string
+  first_name: string | null
+  last_name: string | null
+  company: string | null
+  customer_type: string | null
+  date_of_birth: string | null
+  email: string | null
+  mobile: string | null
+  phone: string | null
+  address: string | null
+  plz: string | null
+  city: string | null
+  notes: string | null
 }
+
 interface Enrollment {
   id: string; status: string; ue_balance: number
   payment_notes: string | null; enrolled_at: string
   course: { id: string; name: string; level: string; type: string }
+}
+
+function fullName(s: Student) {
+  return [s.first_name, s.last_name].filter(Boolean).join(' ') || s.name || '—'
 }
 
 const statusVariant: Record<string, 'success' | 'warning' | 'danger' | 'default'> = {
@@ -37,11 +54,20 @@ export default function StudentProfilePage({ params }: { params: Promise<{ id: s
   const [editOpen, setEditOpen] = useState(false)
   const [ueEditId, setUeEditId] = useState<string | null>(null)
   const [ueValue, setUeValue] = useState('')
-  const [name, setName] = useState('')
-  const [email, setEmail] = useState('')
-  const [phone, setPhone] = useState('')
-  const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
+
+  // Edit form state
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName] = useState('')
+  const [company, setCompany] = useState('')
+  const [customerType, setCustomerType] = useState('')
+  const [dob, setDob] = useState('')
+  const [mobile, setMobile] = useState('')
+  const [email, setEmail] = useState('')
+  const [address, setAddress] = useState('')
+  const [plz, setPlz] = useState('')
+  const [city, setCity] = useState('')
+  const [notes, setNotes] = useState('')
 
   async function load() {
     const [{ data: s }, { data: e }] = await Promise.all([
@@ -58,16 +84,37 @@ export default function StudentProfilePage({ params }: { params: Promise<{ id: s
 
   function openEdit() {
     if (!student) return
-    setName(student.name); setEmail(student.email ?? ''); setPhone(student.phone ?? ''); setNotes(student.notes ?? '')
+    setFirstName(student.first_name ?? '')
+    setLastName(student.last_name ?? '')
+    setCompany(student.company ?? '')
+    setCustomerType(student.customer_type ?? '')
+    setDob(student.date_of_birth ?? '')
+    setMobile(student.mobile ?? '')
+    setEmail(student.email ?? '')
+    setAddress(student.address ?? '')
+    setPlz(student.plz ?? '')
+    setCity(student.city ?? '')
+    setNotes(student.notes ?? '')
     setEditOpen(true)
   }
 
   async function handleSaveStudent() {
-    if (!name.trim()) return
+    if (!firstName.trim() && !lastName.trim()) return
     setSaving(true)
+    const name = [firstName.trim(), lastName.trim()].filter(Boolean).join(' ')
     await supabase.from('students').update({
-      name: name.trim(), email: email.trim() || null,
-      phone: phone.trim() || null, notes: notes.trim() || null,
+      name,
+      first_name: firstName.trim() || null,
+      last_name: lastName.trim() || null,
+      company: company.trim() || null,
+      customer_type: customerType.trim() || null,
+      date_of_birth: dob || null,
+      mobile: mobile.trim() || null,
+      email: email.trim() || null,
+      address: address.trim() || null,
+      plz: plz.trim() || null,
+      city: city.trim() || null,
+      notes: notes.trim() || null,
     }).eq('id', id)
     setSaving(false)
     setEditOpen(false)
@@ -75,7 +122,7 @@ export default function StudentProfilePage({ params }: { params: Promise<{ id: s
   }
 
   async function handleDelete() {
-    if (!confirm(`Delete ${student?.name}? This will remove all their attendance records and enrollments.`)) return
+    if (!confirm(`Delete ${fullName(student!)}? This will remove all their attendance records and enrollments.`)) return
     await supabase.from('students').update({ is_active: false }).eq('id', id)
     router.push('/students')
   }
@@ -89,6 +136,7 @@ export default function StudentProfilePage({ params }: { params: Promise<{ id: s
   if (loading) return <AppShell><p className="text-slate-500">Loading...</p></AppShell>
   if (!student) return <AppShell><p className="text-slate-500">Student not found.</p></AppShell>
 
+  const display = fullName(student)
   const active = enrollments.filter((e) => e.status === 'active')
   const past = enrollments.filter((e) => e.status !== 'active')
 
@@ -99,7 +147,7 @@ export default function StudentProfilePage({ params }: { params: Promise<{ id: s
           <Link href="/students" className="text-slate-400 hover:text-slate-700">
             <ArrowLeft size={20} />
           </Link>
-          <h1 className="text-2xl font-bold text-slate-900">{student.name}</h1>
+          <h1 className="text-2xl font-bold text-slate-900">{display}</h1>
           <div className="ml-auto flex items-center gap-1">
             <button onClick={openEdit} className="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg hover:bg-slate-100">
               <Pencil size={16} />
@@ -110,12 +158,36 @@ export default function StudentProfilePage({ params }: { params: Promise<{ id: s
           </div>
         </div>
 
-        {/* Contact info */}
+        {/* Contact / profile info */}
         <div className="bg-white rounded-xl border border-slate-200 px-6 py-4 space-y-2">
-          {student.email && <p className="text-sm text-slate-600"><span className="text-slate-400 w-14 inline-block">Email</span>{student.email}</p>}
-          {student.phone && <p className="text-sm text-slate-600"><span className="text-slate-400 w-14 inline-block">Phone</span>{student.phone}</p>}
-          {student.notes && <p className="text-sm text-slate-600"><span className="text-slate-400 w-14 inline-block">Notes</span>{student.notes}</p>}
-          {!student.email && !student.phone && !student.notes && (
+          {student.company && (
+            <p className="text-sm text-slate-600"><span className="text-slate-400 w-28 inline-block">Company</span>{student.company}</p>
+          )}
+          {student.customer_type && (
+            <p className="text-sm text-slate-600"><span className="text-slate-400 w-28 inline-block">Customer Type</span>{student.customer_type}</p>
+          )}
+          {student.date_of_birth && (
+            <p className="text-sm text-slate-600"><span className="text-slate-400 w-28 inline-block">Date of Birth</span>{new Date(student.date_of_birth).toLocaleDateString('de-DE')}</p>
+          )}
+          {student.mobile && (
+            <p className="text-sm text-slate-600"><span className="text-slate-400 w-28 inline-block">Mobile</span>{student.mobile}</p>
+          )}
+          {(student.phone && !student.mobile) && (
+            <p className="text-sm text-slate-600"><span className="text-slate-400 w-28 inline-block">Phone</span>{student.phone}</p>
+          )}
+          {student.email && (
+            <p className="text-sm text-slate-600"><span className="text-slate-400 w-28 inline-block">Email</span>{student.email}</p>
+          )}
+          {(student.address || student.plz || student.city) && (
+            <p className="text-sm text-slate-600">
+              <span className="text-slate-400 w-28 inline-block">Address</span>
+              {[student.address, [student.plz, student.city].filter(Boolean).join(' ')].filter(Boolean).join(', ')}
+            </p>
+          )}
+          {student.notes && (
+            <p className="text-sm text-slate-600"><span className="text-slate-400 w-28 inline-block">Notes</span>{student.notes}</p>
+          )}
+          {!student.company && !student.email && !student.mobile && !student.phone && !student.address && !student.notes && (
             <p className="text-sm text-slate-400">No contact info yet. <button onClick={openEdit} className="text-blue-600 hover:underline">Add it →</button></p>
           )}
         </div>
@@ -187,15 +259,30 @@ export default function StudentProfilePage({ params }: { params: Promise<{ id: s
         )}
       </div>
 
-      <Dialog open={editOpen} onClose={() => setEditOpen(false)} title="Edit Student">
+      <Dialog open={editOpen} onClose={() => setEditOpen(false)} title="Edit Student" className="max-w-lg">
         <div className="space-y-4">
-          <Input label="Full Name *" value={name} onChange={(e) => setName(e.target.value)} />
-          <Input label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-          <Input label="Phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
-          <Textarea label="Notes" value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
+          <div className="grid grid-cols-2 gap-3">
+            <Input label="First Name *" value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder="Anna" autoFocus />
+            <Input label="Last Name *" value={lastName} onChange={(e) => setLastName(e.target.value)} placeholder="Müller" />
+          </div>
+          <Input label="Company" value={company} onChange={(e) => setCompany(e.target.value)} placeholder="Optional" />
+          <div className="grid grid-cols-2 gap-3">
+            <Input label="Customer Type" value={customerType} onChange={(e) => setCustomerType(e.target.value)} placeholder="e.g. Private" />
+            <Input label="Date of Birth" type="date" value={dob} onChange={(e) => setDob(e.target.value)} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Input label="Mobile" type="tel" value={mobile} onChange={(e) => setMobile(e.target.value)} placeholder="+49 123 456" />
+            <Input label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="anna@email.com" />
+          </div>
+          <Input label="Address" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Musterstraße 1" />
+          <div className="grid grid-cols-2 gap-3">
+            <Input label="PLZ" value={plz} onChange={(e) => setPlz(e.target.value)} placeholder="10115" />
+            <Input label="City" value={city} onChange={(e) => setCity(e.target.value)} placeholder="Berlin" />
+          </div>
+          <Textarea label="Notes" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Any notes..." rows={2} />
           <div className="flex justify-end gap-3 pt-2">
             <Button variant="secondary" onClick={() => setEditOpen(false)}>Cancel</Button>
-            <Button onClick={handleSaveStudent} disabled={saving || !name.trim()}>
+            <Button onClick={handleSaveStudent} disabled={saving || (!firstName.trim() && !lastName.trim())}>
               {saving ? 'Saving...' : 'Save'}
             </Button>
           </div>
