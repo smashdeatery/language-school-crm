@@ -7,14 +7,17 @@ import { Dialog } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { createClient } from '@/lib/supabase/client'
+import { verifyAdminPin, getAdminFieldDefs, saveAdminData } from '@/actions/admin'
+import type { AdminFieldDef } from '@/actions/admin'
 import { useEffect, useState, use } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Pencil, Trash2 } from 'lucide-react'
+import { ArrowLeft, Pencil, Trash2, Lock, Unlock, Eye, EyeOff } from 'lucide-react'
 
 interface Student {
   id: string
   name: string
+  student_number: string | null
   first_name: string | null
   last_name: string | null
   company: string | null
@@ -27,6 +30,8 @@ interface Student {
   plz: string | null
   city: string | null
   notes: string | null
+  is_active: boolean
+  admin_data: Record<string, string> | null
 }
 
 interface Enrollment {
@@ -42,6 +47,8 @@ function fullName(s: Student) {
 const statusVariant: Record<string, 'success' | 'warning' | 'danger' | 'default'> = {
   active: 'success', paused: 'warning', dropped: 'danger', completed: 'default',
 }
+
+const SESSION_KEY = 'adminUnlocked'
 
 export default function StudentProfilePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
@@ -69,6 +76,18 @@ export default function StudentProfilePage({ params }: { params: Promise<{ id: s
   const [city, setCity] = useState('')
   const [notes, setNotes] = useState('')
 
+  // Admin section state
+  const [adminUnlocked, setAdminUnlocked] = useState(false)
+  const [pinInput, setPinInput] = useState('')
+  const [pinError, setPinError] = useState('')
+  const [pinLoading, setPinLoading] = useState(false)
+  const [showPin, setShowPin] = useState(false)
+  const [adminFields, setAdminFields] = useState<AdminFieldDef[]>([])
+  const [adminValues, setAdminValues] = useState<Record<string, string>>({})
+  const [editingFieldId, setEditingFieldId] = useState<string | null>(null)
+  const [editingValue, setEditingValue] = useState('')
+  const [savingField, setSavingField] = useState(false)
+
   async function load() {
     const [{ data: s }, { data: e }] = await Promise.all([
       supabase.from('students').select('*').eq('id', id).single(),
@@ -76,11 +95,31 @@ export default function StudentProfilePage({ params }: { params: Promise<{ id: s
         .eq('student_id', id).order('enrolled_at', { ascending: false }),
     ])
     setStudent(s)
+    setAdminValues(s?.admin_data ?? {})
     setEnrollments(e ?? [])
     setLoading(false)
   }
 
   useEffect(() => { load() }, [id])
+
+  // Check sessionStorage for existing unlock
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setAdminUnlocked(sessionStorage.getItem(SESSION_KEY) === 'true')
+    }
+  }, [])
+
+  // Load admin field definitions when unlocked
+  const [adminDbPending, setAdminDbPending] = useState(false)
+  useEffect(() => {
+    if (adminUnlocked) {
+      getAdminFieldDefs().then((defs) => {
+        const active = defs.filter((d) => d.is_active)
+        setAdminFields(active)
+        setAdminDbPending(defs.length === 0)
+      })
+    }
+  }, [adminUnlocked])
 
   function openEdit() {
     if (!student) return
@@ -127,10 +166,57 @@ export default function StudentProfilePage({ params }: { params: Promise<{ id: s
     router.push('/students')
   }
 
+  async function handleToggleActive() {
+    if (!student) return
+    await supabase.from('students').update({ is_active: !student.is_active }).eq('id', id)
+    load()
+  }
+
   async function handleSaveUE(enrollmentId: string) {
     await supabase.from('enrollments').update({ ue_balance: parseInt(ueValue) || 0 }).eq('id', enrollmentId)
     setUeEditId(null)
     load()
+  }
+
+  // ── Admin PIN ──────────────────────────────────────────────────────────────
+
+  async function handleUnlock(e: React.FormEvent) {
+    e.preventDefault()
+    setPinLoading(true)
+    setPinError('')
+    const ok = await verifyAdminPin(pinInput)
+    setPinLoading(false)
+    if (ok) {
+      sessionStorage.setItem(SESSION_KEY, 'true')
+      setAdminUnlocked(true)
+      setPinInput('')
+    } else {
+      setPinError('Incorrect PIN.')
+    }
+  }
+
+  function handleLock() {
+    sessionStorage.removeItem(SESSION_KEY)
+    setAdminUnlocked(false)
+    setPinInput('')
+    setPinError('')
+  }
+
+  // ── Admin field editing ────────────────────────────────────────────────────
+
+  function startEdit(fieldId: string) {
+    setEditingFieldId(fieldId)
+    setEditingValue(adminValues[fieldId] ?? '')
+  }
+
+  async function commitEdit(fieldId: string) {
+    if (!student) return
+    setSavingField(true)
+    const updated = { ...adminValues, [fieldId]: editingValue }
+    setAdminValues(updated)
+    await saveAdminData(student.id, updated)
+    setSavingField(false)
+    setEditingFieldId(null)
   }
 
   if (loading) return <AppShell><p className="text-slate-500">Loading...</p></AppShell>
@@ -143,12 +229,28 @@ export default function StudentProfilePage({ params }: { params: Promise<{ id: s
   return (
     <AppShell>
       <div className="space-y-6 max-w-2xl">
+
+        {/* Header */}
         <div className="flex items-center gap-3">
           <Link href="/students" className="text-slate-400 hover:text-slate-700">
             <ArrowLeft size={20} />
           </Link>
-          <h1 className="text-2xl font-bold text-slate-900">{display}</h1>
+          <h1 className={`text-2xl font-bold ${student.is_active ? 'text-slate-900' : 'text-slate-400 line-through'}`}>{display}</h1>
+          {student.student_number && (
+            <span className="text-sm font-mono text-slate-400 bg-slate-100 px-2 py-0.5 rounded-lg">#{student.student_number}</span>
+          )}
           <div className="ml-auto flex items-center gap-1">
+            {/* Active/Inactive toggle */}
+            <button
+              onClick={handleToggleActive}
+              className={`text-xs px-2.5 py-1 rounded-full font-medium transition-colors mr-1 ${
+                student.is_active
+                  ? 'bg-green-100 text-green-700 hover:bg-red-100 hover:text-red-700'
+                  : 'bg-slate-100 text-slate-500 hover:bg-green-100 hover:text-green-700'
+              }`}
+            >
+              {student.is_active ? 'Active' : 'Inactive'}
+            </button>
             <button onClick={openEdit} className="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg hover:bg-slate-100">
               <Pencil size={16} />
             </button>
@@ -189,6 +291,119 @@ export default function StudentProfilePage({ params }: { params: Promise<{ id: s
           )}
           {!student.company && !student.email && !student.mobile && !student.phone && !student.address && !student.notes && (
             <p className="text-sm text-slate-400">No contact info yet. <button onClick={openEdit} className="text-blue-600 hover:underline">Add it →</button></p>
+          )}
+        </div>
+
+        {/* Admin Section */}
+        <div className="rounded-xl border border-slate-200 overflow-hidden">
+          <div className={`flex items-center justify-between px-6 py-3 ${adminUnlocked ? 'bg-amber-50 border-b border-amber-100' : 'bg-slate-50'}`}>
+            <div className="flex items-center gap-2">
+              {adminUnlocked ? <Unlock size={14} className="text-amber-600" /> : <Lock size={14} className="text-slate-400" />}
+              <span className={`text-sm font-semibold ${adminUnlocked ? 'text-amber-800' : 'text-slate-500'}`}>Admin</span>
+            </div>
+            {adminUnlocked && (
+              <button onClick={handleLock} className="text-xs text-slate-400 hover:text-slate-700 flex items-center gap-1">
+                <Lock size={12} /> Lock
+              </button>
+            )}
+          </div>
+
+          {!adminUnlocked ? (
+            /* Locked state */
+            <div className="bg-white px-6 py-5">
+              <form onSubmit={handleUnlock} className="flex items-center gap-3">
+                <div className="relative flex-1 max-w-xs">
+                  <input
+                    type={showPin ? 'text' : 'password'}
+                    value={pinInput}
+                    onChange={(e) => { setPinInput(e.target.value); setPinError('') }}
+                    placeholder="Enter admin PIN to unlock"
+                    className="w-full pr-9 pl-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPin(!showPin)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  >
+                    {showPin ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                </div>
+                <Button type="submit" disabled={pinLoading || !pinInput}>
+                  {pinLoading ? 'Checking...' : 'Unlock'}
+                </Button>
+              </form>
+              {pinError && <p className="text-xs text-red-600 mt-2">{pinError}</p>}
+            </div>
+          ) : (
+            /* Unlocked state */
+            <div className="bg-white divide-y divide-slate-100">
+              {adminDbPending ? (
+                <p className="px-6 py-4 text-sm text-amber-700 bg-amber-50">
+                  ⚠️ Database migration pending — admin fields not available yet.
+                </p>
+              ) : adminFields.length === 0 ? (
+                <p className="px-6 py-4 text-sm text-slate-400">
+                  No admin fields configured. <Link href="/settings" className="text-blue-600 hover:underline">Add fields in Settings →</Link>
+                </p>
+              ) : (
+                adminFields.map((field) => (
+                  <div key={field.id} className="px-6 py-3">
+                    <p className="text-xs text-slate-400 mb-1">{field.label}</p>
+                    {editingFieldId === field.id ? (
+                      <div className="flex items-start gap-2">
+                        {field.field_type === 'textarea' ? (
+                          <textarea
+                            value={editingValue}
+                            onChange={(e) => setEditingValue(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter' && e.metaKey) commitEdit(field.id) }}
+                            rows={3}
+                            autoFocus
+                            className="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none"
+                          />
+                        ) : (
+                          <input
+                            type={field.field_type === 'number' ? 'number' : field.field_type === 'date' ? 'date' : 'text'}
+                            value={editingValue}
+                            onChange={(e) => setEditingValue(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') commitEdit(field.id) }}
+                            autoFocus
+                            className="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                          />
+                        )}
+                        <div className="flex gap-1 mt-0.5">
+                          <button
+                            onClick={() => commitEdit(field.id)}
+                            disabled={savingField}
+                            className="text-xs text-amber-700 font-medium hover:underline"
+                          >
+                            Save
+                          </button>
+                          <button onClick={() => setEditingFieldId(null)} className="text-xs text-slate-400 hover:underline">
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => startEdit(field.id)}
+                        className="text-sm text-slate-700 text-left w-full hover:text-amber-700 group"
+                      >
+                        {adminValues[field.id] ? (
+                          <span className="whitespace-pre-wrap">{adminValues[field.id]}</span>
+                        ) : (
+                          <span className="text-slate-300 group-hover:text-amber-400 italic">Click to add...</span>
+                        )}
+                      </button>
+                    )}
+                  </div>
+                ))
+              )}
+              <div className="px-6 py-3">
+                <Link href="/settings" className="text-xs text-slate-400 hover:text-blue-600">
+                  Manage admin fields in Settings →
+                </Link>
+              </div>
+            </div>
           )}
         </div>
 
@@ -259,6 +474,7 @@ export default function StudentProfilePage({ params }: { params: Promise<{ id: s
         )}
       </div>
 
+      {/* Edit Student Dialog */}
       <Dialog open={editOpen} onClose={() => setEditOpen(false)} title="Edit Student" className="max-w-lg">
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3">

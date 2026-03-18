@@ -7,12 +7,13 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { createClient } from '@/lib/supabase/client'
 import { useEffect, useState } from 'react'
-import { Plus, Search, User } from 'lucide-react'
+import { Plus, Search } from 'lucide-react'
 import Link from 'next/link'
 
 interface Student {
   id: string
   name: string
+  student_number: string | null
   first_name: string | null
   last_name: string | null
   company: string | null
@@ -24,6 +25,7 @@ interface Student {
   plz: string | null
   city: string | null
   notes: string | null
+  is_active: boolean
 }
 
 function fullName(s: Student) {
@@ -37,6 +39,7 @@ export default function StudentsPage() {
   const [loading, setLoading] = useState(true)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [togglingId, setTogglingId] = useState<string | null>(null)
 
   // Form state
   const [firstName, setFirstName] = useState('')
@@ -56,9 +59,8 @@ export default function StudentsPage() {
   async function load() {
     const { data } = await supabase
       .from('students')
-      .select('id, name, first_name, last_name, company, customer_type, date_of_birth, email, mobile, address, plz, city, notes')
-      .eq('is_active', true)
-      .order('last_name', { ascending: true })
+      .select('id, name, student_number, first_name, last_name, company, customer_type, date_of_birth, email, mobile, address, plz, city, notes, is_active')
+      .order('student_number', { ascending: true })
     setStudents(data ?? [])
     setFiltered(data ?? [])
     setLoading(false)
@@ -72,7 +74,8 @@ export default function StudentsPage() {
       students.filter((s) =>
         fullName(s).toLowerCase().includes(q) ||
         (s.email?.toLowerCase().includes(q) ?? false) ||
-        (s.company?.toLowerCase().includes(q) ?? false)
+        (s.company?.toLowerCase().includes(q) ?? false) ||
+        (s.student_number?.includes(q) ?? false)
       )
     )
   }, [search, students])
@@ -107,6 +110,15 @@ export default function StudentsPage() {
     load()
   }
 
+  async function toggleActive(student: Student, e: React.MouseEvent) {
+    e.preventDefault()
+    e.stopPropagation()
+    setTogglingId(student.id)
+    await supabase.from('students').update({ is_active: !student.is_active }).eq('id', student.id)
+    setTogglingId(null)
+    load()
+  }
+
   return (
     <AppShell>
       <div className="space-y-6">
@@ -120,7 +132,7 @@ export default function StudentsPage() {
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by name, company or email..."
+            placeholder="Search by name, number, company or email..."
             className="w-full pl-9 pr-4 py-2.5 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
           />
         </div>
@@ -129,7 +141,6 @@ export default function StudentsPage() {
           <p className="text-slate-500 text-sm">Loading...</p>
         ) : filtered.length === 0 ? (
           <div className="bg-white rounded-xl border border-slate-200 p-12 text-center">
-            <User size={32} className="text-slate-300 mx-auto mb-3" />
             <p className="text-slate-500 text-sm mb-4">
               {search ? 'No students match your search.' : 'No students added yet.'}
             </p>
@@ -140,23 +151,37 @@ export default function StudentsPage() {
             {filtered.map((student) => {
               const display = fullName(student)
               const subtitle = student.company || student.email
+              const inactive = !student.is_active
               return (
                 <Link
                   key={student.id}
                   href={`/students/${student.id}`}
-                  className="flex items-center justify-between px-6 py-4 hover:bg-slate-50 transition-colors"
+                  className={`flex items-center justify-between px-6 py-4 hover:bg-slate-50 transition-colors ${inactive ? 'opacity-50' : ''}`}
                 >
                   <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 text-sm font-semibold">
-                      {display.charAt(0).toUpperCase()}
+                    <div className="w-12 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500 text-xs font-mono font-semibold shrink-0">
+                      {student.student_number ?? '—'}
                     </div>
                     <div>
-                      <p className="font-medium text-slate-900 text-sm">{display}</p>
+                      <p className={`font-medium text-sm ${inactive ? 'line-through text-slate-400' : 'text-slate-900'}`}>{display}</p>
                       {subtitle && <p className="text-xs text-slate-500">{subtitle}</p>}
                       {student.city && <p className="text-xs text-slate-400">{[student.plz, student.city].filter(Boolean).join(' ')}</p>}
                     </div>
                   </div>
-                  <span className="text-xs text-slate-400">View →</span>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={(e) => toggleActive(student, e)}
+                      disabled={togglingId === student.id}
+                      className={`text-xs px-2.5 py-1 rounded-full font-medium transition-colors ${
+                        inactive
+                          ? 'bg-slate-100 text-slate-500 hover:bg-amber-100 hover:text-amber-700'
+                          : 'bg-green-100 text-green-700 hover:bg-red-100 hover:text-red-700'
+                      }`}
+                    >
+                      {inactive ? 'Inactive' : 'Active'}
+                    </button>
+                    <span className="text-xs text-slate-400">View →</span>
+                  </div>
                 </Link>
               )
             })}
