@@ -4,7 +4,8 @@ import { NextResponse, type NextRequest } from 'next/server'
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
 
-  const isLoginPage = request.nextUrl.pathname.startsWith('/login')
+  const pathname = request.nextUrl.pathname
+  const isPublicPath = pathname.startsWith('/login') || pathname.startsWith('/assessment')
 
   try {
     const supabase = createServerClient(
@@ -30,16 +31,16 @@ export async function middleware(request: NextRequest) {
 
     const { data: { user } } = await supabase.auth.getUser()
 
-    if (!user && !isLoginPage) {
+    if (!user && !isPublicPath) {
       return NextResponse.redirect(new URL('/login', request.url))
     }
 
-    if (user && isLoginPage) {
+    if (user && pathname.startsWith('/login')) {
       return NextResponse.redirect(new URL('/', request.url))
     }
   } catch (e) {
     // If Supabase is unreachable or key is invalid, always go to login
-    if (!isLoginPage) {
+    if (!isPublicPath) {
       return NextResponse.redirect(new URL('/login', request.url))
     }
   }

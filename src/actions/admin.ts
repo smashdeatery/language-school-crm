@@ -3,8 +3,8 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 
-function serverClient() {
-  const cookieStore = cookies()
+async function serverClient() {
+  const cookieStore = await cookies()
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -29,7 +29,7 @@ export interface AdminFieldDef {
 }
 
 export async function getAdminFieldDefs(): Promise<AdminFieldDef[]> {
-  const supabase = serverClient()
+  const supabase = await serverClient()
   const { data, error } = await supabase
     .from('admin_field_definitions')
     .select('id, label, field_type, sort_order, is_active')
@@ -39,7 +39,7 @@ export async function getAdminFieldDefs(): Promise<AdminFieldDef[]> {
 }
 
 export async function createAdminField(label: string, field_type: string): Promise<void> {
-  const supabase = serverClient()
+  const supabase = await serverClient()
   const { data: existing } = await supabase
     .from('admin_field_definitions')
     .select('sort_order')
@@ -50,19 +50,19 @@ export async function createAdminField(label: string, field_type: string): Promi
 }
 
 export async function updateAdminField(id: string, updates: Partial<Pick<AdminFieldDef, 'label' | 'field_type' | 'sort_order' | 'is_active'>>): Promise<void> {
-  const supabase = serverClient()
+  const supabase = await serverClient()
   await supabase.from('admin_field_definitions').update(updates).eq('id', id)
 }
 
 export async function deleteAdminField(id: string): Promise<void> {
-  const supabase = serverClient()
+  const supabase = await serverClient()
   await supabase.from('admin_field_definitions').delete().eq('id', id)
 }
 
 // ── Student admin data ────────────────────────────────────────────────────────
 
 export async function saveAdminData(studentId: string, adminData: Record<string, string>): Promise<void> {
-  const supabase = serverClient()
+  const supabase = await serverClient()
   await supabase.from('students').update({ admin_data: adminData }).eq('id', studentId)
   // Silently fails if admin_data column doesn't exist yet (pending migration)
 }

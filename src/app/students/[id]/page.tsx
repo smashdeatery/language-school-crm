@@ -161,8 +161,16 @@ export default function StudentProfilePage({ params }: { params: Promise<{ id: s
   }
 
   async function handleDelete() {
-    if (!confirm(`Delete ${fullName(student!)}? This will remove all their attendance records and enrollments.`)) return
-    await supabase.from('students').update({ is_active: false }).eq('id', id)
+    const isPending = student!.customer_type === 'Pending Assessment'
+    const message = isPending
+      ? `Permanently delete ${fullName(student!)}? This cannot be undone.`
+      : `Delete ${fullName(student!)}? This will remove all their attendance records and enrollments.`
+    if (!confirm(message)) return
+    if (isPending) {
+      await supabase.from('students').delete().eq('id', id)
+    } else {
+      await supabase.from('students').update({ is_active: false }).eq('id', id)
+    }
     router.push('/students')
   }
 
@@ -307,6 +315,50 @@ export default function StudentProfilePage({ params }: { params: Promise<{ id: s
               </button>
             )}
           </div>
+
+          {/* Assessment Results — shown whenever assessment data exists, no migration needed */}
+          {adminUnlocked && adminValues.placement && (
+            <div className="bg-white border-b border-slate-100 px-6 py-4 space-y-3">
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Assessment Results</p>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 text-center">
+                  <p className="text-xs text-amber-600 mb-0.5">Placement</p>
+                  <p className="text-sm font-semibold text-amber-800">{adminValues.placement}</p>
+                </div>
+                <div className="bg-slate-50 border border-slate-100 rounded-lg px-3 py-2 text-center">
+                  <p className="text-xs text-slate-500 mb-0.5">Score</p>
+                  <p className="text-sm font-semibold text-slate-700">{adminValues.score}</p>
+                </div>
+                <div className="bg-slate-50 border border-slate-100 rounded-lg px-3 py-2 text-center">
+                  <p className="text-xs text-slate-500 mb-0.5">Confidence</p>
+                  <p className="text-sm font-semibold text-slate-700">{adminValues.confidence}</p>
+                </div>
+              </div>
+              {adminValues.assessment_date && (
+                <p className="text-xs text-slate-400">
+                  Test taken: {new Date(adminValues.assessment_date).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                </p>
+              )}
+              {adminValues.recommendation && (
+                <div>
+                  <p className="text-xs text-slate-400 mb-1">Recommendation</p>
+                  <p className="text-sm text-slate-700">{adminValues.recommendation}</p>
+                </div>
+              )}
+              {adminValues.focus_areas && (
+                <div>
+                  <p className="text-xs text-slate-400 mb-1">Focus Areas</p>
+                  <p className="text-sm text-slate-700">{adminValues.focus_areas}</p>
+                </div>
+              )}
+              {adminValues.reasoning && (
+                <div>
+                  <p className="text-xs text-slate-400 mb-1">Reasoning</p>
+                  <p className="text-sm text-slate-600 italic">{adminValues.reasoning}</p>
+                </div>
+              )}
+            </div>
+          )}
 
           {!adminUnlocked ? (
             /* Locked state */

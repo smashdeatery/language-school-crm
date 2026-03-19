@@ -139,54 +139,97 @@ export default function StudentsPage() {
 
         {loading ? (
           <p className="text-slate-500 text-sm">Loading...</p>
-        ) : filtered.length === 0 ? (
-          <div className="bg-white rounded-xl border border-slate-200 p-12 text-center">
-            <p className="text-slate-500 text-sm mb-4">
-              {search ? 'No students match your search.' : 'No students added yet.'}
-            </p>
-            {!search && <Button onClick={openCreate}><Plus size={16} /> Add first student</Button>}
-          </div>
-        ) : (
-          <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100">
-            {filtered.map((student) => {
-              const display = fullName(student)
-              const subtitle = student.company || student.email
-              const inactive = !student.is_active
-              return (
-                <Link
-                  key={student.id}
-                  href={`/students/${student.id}`}
-                  className={`flex items-center justify-between px-6 py-4 hover:bg-slate-50 transition-colors ${inactive ? 'opacity-50' : ''}`}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500 text-xs font-mono font-semibold shrink-0">
-                      {student.student_number ?? '—'}
-                    </div>
-                    <div>
-                      <p className={`font-medium text-sm ${inactive ? 'line-through text-slate-400' : 'text-slate-900'}`}>{display}</p>
-                      {subtitle && <p className="text-xs text-slate-500">{subtitle}</p>}
-                      {student.city && <p className="text-xs text-slate-400">{[student.plz, student.city].filter(Boolean).join(' ')}</p>}
-                    </div>
+        ) : (() => {
+          const pending = filtered.filter(s => s.customer_type === 'Pending Assessment')
+          const regular = filtered.filter(s => s.customer_type !== 'Pending Assessment')
+
+          const renderRow = (student: Student) => {
+            const display = fullName(student)
+            const subtitle = student.company || student.email
+            const inactive = !student.is_active
+            return (
+              <Link
+                key={student.id}
+                href={`/students/${student.id}`}
+                className={`flex items-center justify-between px-6 py-4 hover:bg-slate-50 transition-colors ${inactive ? 'opacity-50' : ''}`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500 text-xs font-mono font-semibold shrink-0">
+                    {student.student_number ?? '—'}
                   </div>
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={(e) => toggleActive(student, e)}
-                      disabled={togglingId === student.id}
-                      className={`text-xs px-2.5 py-1 rounded-full font-medium transition-colors ${
-                        inactive
-                          ? 'bg-slate-100 text-slate-500 hover:bg-amber-100 hover:text-amber-700'
-                          : 'bg-green-100 text-green-700 hover:bg-red-100 hover:text-red-700'
-                      }`}
-                    >
-                      {inactive ? 'Inactive' : 'Active'}
-                    </button>
-                    <span className="text-xs text-slate-400">View →</span>
+                  <div>
+                    <p className={`font-medium text-sm ${inactive ? 'line-through text-slate-400' : 'text-slate-900'}`}>{display}</p>
+                    {subtitle && <p className="text-xs text-slate-500">{subtitle}</p>}
+                    {student.city && <p className="text-xs text-slate-400">{[student.plz, student.city].filter(Boolean).join(' ')}</p>}
                   </div>
-                </Link>
-              )
-            })}
-          </div>
-        )}
+                </div>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={(e) => toggleActive(student, e)}
+                    disabled={togglingId === student.id}
+                    className={`text-xs px-2.5 py-1 rounded-full font-medium transition-colors ${
+                      inactive
+                        ? 'bg-slate-100 text-slate-500 hover:bg-amber-100 hover:text-amber-700'
+                        : 'bg-green-100 text-green-700 hover:bg-red-100 hover:text-red-700'
+                    }`}
+                  >
+                    {inactive ? 'Inactive' : 'Active'}
+                  </button>
+                  <span className="text-xs text-slate-400">View →</span>
+                </div>
+              </Link>
+            )
+          }
+
+          return (
+            <>
+              {pending.length > 0 && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 overflow-hidden">
+                  <div className="px-6 py-3 border-b border-amber-200 flex items-center gap-2">
+                    <span className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Pending Assessment</span>
+                    <span className="text-xs bg-amber-200 text-amber-800 rounded-full px-2 py-0.5 font-mono">{pending.length}</span>
+                  </div>
+                  <div className="divide-y divide-amber-100">
+                    {pending.map(student => (
+                      <Link
+                        key={student.id}
+                        href={`/students/${student.id}`}
+                        className="flex items-center justify-between px-6 py-4 hover:bg-amber-100/50 transition-colors"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-12 h-8 rounded-lg bg-amber-100 flex items-center justify-center text-amber-600 text-xs font-mono font-semibold shrink-0">
+                            {student.student_number ?? '—'}
+                          </div>
+                          <div>
+                            <p className="font-medium text-sm text-slate-900">{fullName(student)}</p>
+                            {student.email && <p className="text-xs text-slate-500">{student.email}</p>}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs px-2.5 py-1 rounded-full font-medium bg-amber-200 text-amber-800">Pending</span>
+                          <span className="text-xs text-slate-400">View →</span>
+                        </div>
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {regular.length === 0 && pending.length === 0 ? (
+                <div className="bg-white rounded-xl border border-slate-200 p-12 text-center">
+                  <p className="text-slate-500 text-sm mb-4">
+                    {search ? 'No students match your search.' : 'No students added yet.'}
+                  </p>
+                  {!search && <Button onClick={openCreate}><Plus size={16} /> Add first student</Button>}
+                </div>
+              ) : regular.length > 0 ? (
+                <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100">
+                  {regular.map(renderRow)}
+                </div>
+              ) : null}
+            </>
+          )
+        })()}
 
         <p className="text-xs text-slate-400 text-right">{filtered.length} student{filtered.length !== 1 ? 's' : ''}</p>
       </div>
