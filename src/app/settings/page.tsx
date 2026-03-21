@@ -11,6 +11,9 @@ import {
   deleteAdminField,
 } from '@/actions/admin'
 import type { AdminFieldDef } from '@/actions/admin'
+import { getClosures, addClosure, deleteClosure } from '@/actions/closures'
+import type { SchoolClosure } from '@/actions/closures'
+import { getBerlinPublicHolidays } from '@/lib/utils/holidays'
 import { useEffect, useState } from 'react'
 import { Lock, Unlock, Eye, EyeOff, Plus, Trash2, ChevronUp, ChevronDown, Pencil, Check, X } from 'lucide-react'
 
@@ -44,13 +47,46 @@ export default function SettingsPage() {
   const [editLabel, setEditLabel] = useState('')
   const [editType, setEditType] = useState('text')
 
+  // Closures
+  const [closures, setClosures] = useState<SchoolClosure[]>([])
+  const [closuresDbPending, setClosuresDbPending] = useState(false)
+  const [newClosureStart, setNewClosureStart] = useState('')
+  const [newClosureEnd, setNewClosureEnd] = useState('')
+  const [newClosureName, setNewClosureName] = useState('')
+  const [addingClosure, setAddingClosure] = useState(false)
+  const currentYear = new Date().getFullYear()
+  const publicHolidays = getBerlinPublicHolidays(currentYear)
+
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const unlocked = sessionStorage.getItem(SESSION_KEY) === 'true'
       setAdminUnlocked(unlocked)
-      if (unlocked) loadFields()
+      if (unlocked) { loadFields(); loadClosures() }
     }
   }, [])
+
+  async function loadClosures() {
+    const data = await getClosures()
+    setClosures(data)
+    setClosuresDbPending(data.length === 0 && !await getClosures().then(() => true).catch(() => false))
+  }
+
+  async function handleAddClosure() {
+    if (!newClosureStart || !newClosureName.trim()) return
+    setAddingClosure(true)
+    await addClosure(newClosureStart, newClosureName.trim(), newClosureEnd || undefined)
+    setNewClosureStart('')
+    setNewClosureEnd('')
+    setNewClosureName('')
+    setAddingClosure(false)
+    loadClosures()
+  }
+
+  async function handleDeleteClosure(id: string, name: string) {
+    if (!confirm(`Remove "${name}" from school closures?`)) return
+    await deleteClosure(id)
+    loadClosures()
+  }
 
   async function loadFields() {
     setLoading(true)
@@ -74,6 +110,7 @@ export default function SettingsPage() {
       setAdminUnlocked(true)
       setPinInput('')
       loadFields()
+      loadClosures()
     } else {
       setPinError('Incorrect PIN.')
     }
@@ -275,6 +312,99 @@ export default function SettingsPage() {
                     {FIELD_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
                   </select>
                   <Button onClick={handleAdd} disabled={adding || !newLabel.trim()}>
+                    <Plus size={14} /> Add
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+
+            {/* School Closures */}
+            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+              <div className="flex items-center gap-2 px-6 py-3 bg-slate-50 border-b border-slate-100">
+                <span className="text-sm font-semibold text-slate-700">School Closures & Public Holidays</span>
+              </div>
+
+              {/* Berlin public holidays (read-only) */}
+              <div className="px-6 py-4 border-b border-slate-100">
+                <p className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-3">
+                  Berlin Public Holidays {currentYear} — auto-recognised
+                </p>
+                <div className="grid grid-cols-2 gap-x-6 gap-y-1.5">
+                  {publicHolidays.map(h => (
+                    <div key={h.date} className="flex items-center justify-between text-sm">
+                      <span className="text-slate-700">{h.name}</span>
+                      <span className="text-xs text-slate-400 font-mono">
+                        {new Date(h.date + 'T12:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Custom closures */}
+              <div className="divide-y divide-slate-100">
+                {closuresDbPending && (
+                  <p className="px-6 py-3 text-xs text-amber-700 bg-amber-50">
+                    ⚠ Run the school_closures migration to enable custom closure storage.
+                  </p>
+                )}
+                {closures.length === 0 && !closuresDbPending ? (
+                  <p className="px-6 py-3 text-sm text-slate-400">No custom closures added yet.</p>
+                ) : (
+                  closures.map(c => (
+                    <div key={c.id} className="flex items-center justify-between px-6 py-3">
+                      <div>
+                        <span className="text-sm text-slate-800">{c.name}</span>
+                        <span className="ml-3 text-xs text-slate-400 font-mono">
+                          {new Date(c.date + 'T12:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                          {c.end_date && c.end_date !== c.date && (
+                            <> – {new Date(c.end_date + 'T12:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })}</>
+                          )}
+                        </span>
+                      </div>
+                      <button onClick={() => handleDeleteClosure(c.id, c.name)} className="text-slate-300 hover:text-red-500">
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* Add closure form */}
+              <div className="px-6 py-4 border-t border-slate-100 bg-slate-50">
+                <p className="text-xs font-medium text-slate-500 mb-2">Add school closure</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <label className="text-xs text-slate-500">From</label>
+                    <input
+                      type="date"
+                      value={newClosureStart}
+                      onChange={e => {
+                        setNewClosureStart(e.target.value)
+                        if (!newClosureEnd || newClosureEnd < e.target.value) setNewClosureEnd(e.target.value)
+                      }}
+                      className="text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    />
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <label className="text-xs text-slate-500">To</label>
+                    <input
+                      type="date"
+                      value={newClosureEnd}
+                      min={newClosureStart}
+                      onChange={e => setNewClosureEnd(e.target.value)}
+                      className="text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    />
+                  </div>
+                  <input
+                    value={newClosureName}
+                    onChange={e => setNewClosureName(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && handleAddClosure()}
+                    placeholder="e.g. Sommerferien, School trip..."
+                    className="flex-1 min-w-40 text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                  />
+                  <Button onClick={handleAddClosure} disabled={addingClosure || !newClosureStart || !newClosureName.trim()}>
                     <Plus size={14} /> Add
                   </Button>
                 </div>

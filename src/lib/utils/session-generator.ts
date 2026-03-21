@@ -14,14 +14,16 @@ const DAY_MAP: Record<DayOfWeek, number> = {
 export function generateSessionDates(
   startDate: Date,
   scheduleDays: DayOfWeek[],
-  totalSessions: number
+  totalSessions: number,
+  closedDates: Set<string> = new Set()
 ): Date[] {
   const dayNumbers = scheduleDays.map((d) => DAY_MAP[d])
   const dates: Date[] = []
   let current = new Date(startDate)
 
   while (dates.length < totalSessions) {
-    if (dayNumbers.includes(getDay(current))) {
+    const iso = format(current, 'yyyy-MM-dd')
+    if (dayNumbers.includes(getDay(current)) && !closedDates.has(iso)) {
       dates.push(new Date(current))
     }
     current = addDays(current, 1)

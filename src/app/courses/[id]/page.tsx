@@ -4,11 +4,20 @@ import { AppShell } from '@/components/layout/AppShell'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
 import { createClient } from '@/lib/supabase/client'
-import { formatSessionDate } from '@/lib/utils/session-generator'
+import { formatSessionDate, generateSessionDates } from '@/lib/utils/session-generator'
+import { getHolidaysForRange, type PublicHoliday } from '@/lib/utils/holidays'
+import { getClosures, type SchoolClosure } from '@/actions/closures'
+import { addDays, format } from 'date-fns'
+import type { DayOfWeek } from '@/types/database'
 import { useEffect, useState, use } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, ChevronDown, ChevronRight, Plus, Search, UserPlus } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronRight, Pencil, Plus, RefreshCw, Search, UserPlus } from 'lucide-react'
+
+const LEVELS = ['A1.1','A1.2','A2.1','A2.2','B1.1','B1.2','B2.1','B2.2','C1','C2']
+const TYPES = ['extensive','intensive','private']
+const DAYS = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday']
 
 interface Course {
   id: string; name: string; level: string; type: string
@@ -48,6 +57,24 @@ export default function CourseOverviewPage({ params }: { params: Promise<{ id: s
   const [studentSearch, setStudentSearch] = useState('')
   const [enrolling, setEnrolling] = useState(false)
 
+  // Holiday/closure data
+  const [publicHolidays, setPublicHolidays] = useState<PublicHoliday[]>([])
+  const [customClosures, setCustomClosures] = useState<SchoolClosure[]>([])
+
+  // Edit course state
+  const [editOpen, setEditOpen] = useState(false)
+  const [editName, setEditName] = useState('')
+  const [editLevel, setEditLevel] = useState('')
+  const [editType, setEditType] = useState('')
+  const [editDays, setEditDays] = useState<string[]>([])
+  const [editTime, setEditTime] = useState('')
+  const [editStartDate, setEditStartDate] = useState('')
+  const [editTotalSessions, setEditTotalSessions] = useState('')
+  const [editMaterials, setEditMaterials] = useState('')
+  const [editIsActive, setEditIsActive] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [regenerating, setRegenerating] = useState(false)
+
   async function load() {
     const [{ data: c }, { data: s }, { data: e }] = await Promise.all([
       supabase.from('courses').select('*').eq('id', id).single(),
@@ -56,7 +83,6 @@ export default function CourseOverviewPage({ params }: { params: Promise<{ id: s
     ])
     setCourse(c)
     setSessions(s ?? [])
-    // Normalise Supabase's join result (student may come back as array or object)
     setEnrollments(
       (e ?? []).map((row: any) => ({
         ...row,
@@ -64,9 +90,32 @@ export default function CourseOverviewPage({ params }: { params: Promise<{ id: s
       })) as Enrollment[]
     )
     setLoading(false)
+
+    // Load holidays once we have the course date range
+    if (c && s && s.length > 0) {
+      const dates = s.map((x: any) => x.session_date).sort()
+      const holidays = getHolidaysForRange(dates[0], dates[dates.length - 1])
+      setPublicHolidays(holidays)
+    }
   }
 
   useEffect(() => { load() }, [id])
+  useEffect(() => {
+    getClosures().then(setCustomClosures)
+  }, [])
+
+  // Build a combined map of closure dates for quick lookup (expand ranges)
+  const closureDateMap = new Map<string, string>()
+  publicHolidays.forEach(h => closureDateMap.set(h.date, h.name))
+  customClosures.forEach(c => {
+    const end = c.end_date && c.end_date > c.date ? c.end_date : c.date
+    let d = new Date(c.date + 'T12:00:00')
+    const endDate = new Date(end + 'T12:00:00')
+    while (d <= endDate) {
+      closureDateMap.set(format(d, 'yyyy-MM-dd'), c.name)
+      d = addDays(d, 1)
+    }
+  })
 
   const today = new Date().toISOString().split('T')[0]
   const nextSession = sessions.find((s) => s.session_date >= today)
@@ -77,6 +126,83 @@ export default function CourseOverviewPage({ params }: { params: Promise<{ id: s
     setAllStudents(data ?? [])
     setStudentSearch('')
     setEnrollDialogOpen(true)
+  }
+
+  function openEdit() {
+    if (!course) return
+    setEditName(course.name)
+    setEditLevel(course.level)
+    setEditType(course.type)
+    setEditDays(course.schedule_days ?? [])
+    setEditTime(course.schedule_time)
+    setEditStartDate(course.start_date)
+    setEditTotalSessions(String(course.total_sessions))
+    setEditMaterials(course.materials ?? '')
+    setEditIsActive(course.is_active)
+    setEditOpen(true)
+  }
+
+  async function handleSaveCourse() {
+    if (!editName.trim()) return
+    setSaving(true)
+    await supabase.from('courses').update({
+      name: editName.trim(),
+      level: editLevel,
+      type: editType,
+      schedule_days: editDays,
+      schedule_time: editTime,
+      start_date: editStartDate,
+      total_sessions: parseInt(editTotalSessions) || 0,
+      materials: editMaterials.trim() || null,
+      is_active: editIsActive,
+    }).eq('id', id)
+    setSaving(false)
+    setEditOpen(false)
+    load()
+  }
+
+  async function handleRegenerateSessions() {
+    if (!course) return
+    if (!window.confirm(
+      `This will delete all ${sessions.length} existing sessions for "${course.name}" and regenerate them, skipping holidays and closures. Continue?`
+    )) return
+
+    setRegenerating(true)
+
+    // Build closed dates set — holidays 2 years out from start date
+    const endDate = new Date(course.start_date)
+    endDate.setFullYear(endDate.getFullYear() + 2)
+    const endIso = endDate.toISOString().split('T')[0]
+    const holidays = getHolidaysForRange(course.start_date, endIso)
+    const closures = await getClosures()
+    const closedDates = new Set<string>()
+    holidays.forEach(h => closedDates.add(h.date))
+    closures.forEach(c => closedDates.add(c.date))
+
+    // Generate new session dates skipping closed days
+    const dates = generateSessionDates(
+      new Date(course.start_date),
+      course.schedule_days as DayOfWeek[],
+      course.total_sessions,
+      closedDates
+    )
+
+    // Delete all existing sessions then re-insert
+    await supabase.from('sessions').delete().eq('course_id', id)
+    await supabase.from('sessions').insert(
+      dates.map((date, i) => ({
+        course_id: id,
+        session_number: i + 1,
+        session_date: format(date, 'yyyy-MM-dd'),
+      }))
+    )
+
+    setRegenerating(false)
+    load()
+  }
+
+  function toggleDay(day: string) {
+    setEditDays(prev => prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day])
   }
 
   const enrolledIds = new Set(enrollments.map((e) => e.student_id))
@@ -118,9 +244,18 @@ export default function CourseOverviewPage({ params }: { params: Promise<{ id: s
               {course.materials && ` · ${course.materials}`}
             </p>
           </div>
-          <Button size="sm" variant="outline" onClick={openEnrollDialog}>
-            <UserPlus size={14} /> Enroll Student
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={openEdit}>
+              <Pencil size={14} /> Edit
+            </Button>
+            <Button size="sm" variant="outline" onClick={handleRegenerateSessions} disabled={regenerating}>
+              <RefreshCw size={14} className={regenerating ? 'animate-spin' : ''} />
+              {regenerating ? 'Regenerating...' : 'Regenerate Sessions'}
+            </Button>
+            <Button size="sm" variant="outline" onClick={openEnrollDialog}>
+              <UserPlus size={14} /> Enroll Student
+            </Button>
+          </div>
         </div>
 
         {/* Enrolled students */}
@@ -149,8 +284,17 @@ export default function CourseOverviewPage({ params }: { params: Promise<{ id: s
 
         {/* Next Session CTA */}
         {nextSession && (
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-5">
-            <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-2">Next Session</p>
+          <div className={`rounded-xl p-5 border ${closureDateMap.has(nextSession.session_date) ? 'bg-red-50 border-red-200' : 'bg-blue-50 border-blue-200'}`}>
+            <div className="flex items-center gap-2 mb-2">
+              <p className={`text-xs font-semibold uppercase tracking-wide ${closureDateMap.has(nextSession.session_date) ? 'text-red-600' : 'text-blue-600'}`}>
+                Next Session
+              </p>
+              {closureDateMap.has(nextSession.session_date) && (
+                <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-medium">
+                  ⚠ {closureDateMap.get(nextSession.session_date)}
+                </span>
+              )}
+            </div>
             <div className="flex items-center justify-between gap-4">
               <div>
                 <p className="font-semibold text-slate-900">
@@ -184,6 +328,7 @@ export default function CourseOverviewPage({ params }: { params: Promise<{ id: s
                   courseId={id}
                   enrollments={enrollments}
                   expanded={expandedSession === session.id}
+                  closureName={closureDateMap.get(session.session_date)}
                   onToggle={() =>
                     setExpandedSession(expandedSession === session.id ? null : session.id)
                   }
@@ -199,6 +344,72 @@ export default function CourseOverviewPage({ params }: { params: Promise<{ id: s
           </div>
         )}
       </div>
+
+      {/* Edit Course Dialog */}
+      <Dialog open={editOpen} onClose={() => setEditOpen(false)} title="Edit Course" className="max-w-lg">
+        <div className="space-y-4">
+          <Input label="Course Name *" value={editName} onChange={e => setEditName(e.target.value)} placeholder="e.g. Montagsgruppe A2" autoFocus />
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Level</label>
+              <select value={editLevel} onChange={e => setEditLevel(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                {LEVELS.map(l => <option key={l} value={l}>{l}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Type</label>
+              <select value={editType} onChange={e => setEditType(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 capitalize">
+                {TYPES.map(t => <option key={t} value={t} className="capitalize">{t}</option>)}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-2">Schedule Days</label>
+            <div className="flex flex-wrap gap-2">
+              {DAYS.map(day => (
+                <button
+                  key={day}
+                  type="button"
+                  onClick={() => toggleDay(day)}
+                  className={`text-xs px-3 py-1.5 rounded-full border font-medium capitalize transition-colors ${
+                    editDays.includes(day)
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300'
+                  }`}
+                >
+                  {day.slice(0, 2).toUpperCase()}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Input label="Time" type="time" value={editTime} onChange={e => setEditTime(e.target.value)} />
+            <Input label="Start Date" type="date" value={editStartDate} onChange={e => setEditStartDate(e.target.value)} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Input label="Total Sessions" type="number" value={editTotalSessions} onChange={e => setEditTotalSessions(e.target.value)} />
+            <Input label="Materials" value={editMaterials} onChange={e => setEditMaterials(e.target.value)} placeholder="e.g. Schritte Plus A2" />
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setEditIsActive(!editIsActive)}
+              className={`text-xs px-3 py-1.5 rounded-full font-medium transition-colors ${
+                editIsActive ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'
+              }`}
+            >
+              {editIsActive ? 'Active' : 'Inactive'}
+            </button>
+            <span className="text-xs text-slate-400">Toggle course status</span>
+          </div>
+          <div className="flex justify-end gap-3 pt-2">
+            <Button variant="secondary" onClick={() => setEditOpen(false)}>Cancel</Button>
+            <Button onClick={handleSaveCourse} disabled={saving || !editName.trim()}>
+              {saving ? 'Saving...' : 'Save Changes'}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
 
       {/* Enroll Student Dialog */}
       <Dialog open={enrollDialogOpen} onClose={() => setEnrollDialogOpen(false)} title="Enroll Student">
@@ -250,10 +461,10 @@ export default function CourseOverviewPage({ params }: { params: Promise<{ id: s
 }
 
 function SessionRow({
-  session, courseId, enrollments, expanded, onToggle,
+  session, courseId, enrollments, expanded, closureName, onToggle,
 }: {
   session: Session; courseId: string; enrollments: Enrollment[]
-  expanded: boolean; onToggle: () => void
+  expanded: boolean; closureName: string | undefined; onToggle: () => void
 }) {
   const [attendanceMap, setAttendanceMap] = useState<Record<string, string | null>>({})
   const supabase = createClient()
@@ -279,7 +490,7 @@ function SessionRow({
   ).length
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+    <div className={`bg-white rounded-xl border overflow-hidden ${closureName ? 'border-red-200' : 'border-slate-200'}`}>
       <button
         onClick={onToggle}
         className="w-full flex items-center justify-between px-5 py-4 hover:bg-slate-50 transition-colors text-left"
@@ -296,6 +507,9 @@ function SessionRow({
               {session.teacher && <span className="font-normal text-slate-500"> · {session.teacher.name}</span>}
             </p>
             {session.topic && <p className="text-xs text-slate-500 mt-0.5">{session.topic}</p>}
+            {closureName && (
+              <p className="text-xs text-red-500 mt-0.5">⚠ {closureName}</p>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-3">
