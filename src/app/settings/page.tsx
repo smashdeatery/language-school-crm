@@ -13,6 +13,7 @@ import {
 import type { AdminFieldDef } from '@/actions/admin'
 import { getClosures, addClosure, deleteClosure } from '@/actions/closures'
 import type { SchoolClosure } from '@/actions/closures'
+import { getSchoolSettings, setSchoolSetting, type SchoolSettings } from '@/actions/school-settings'
 import { getBerlinPublicHolidays } from '@/lib/utils/holidays'
 import { useEffect, useState } from 'react'
 import { Lock, Unlock, Eye, EyeOff, Plus, Trash2, ChevronUp, ChevronDown, Pencil, Check, X } from 'lucide-react'
@@ -46,6 +47,14 @@ export default function SettingsPage() {
   const [editId, setEditId] = useState<string | null>(null)
   const [editLabel, setEditLabel] = useState('')
   const [editType, setEditType] = useState('text')
+
+  // School settings
+  const [schoolSettings, setSchoolSettings] = useState<SchoolSettings | null>(null)
+  useEffect(() => { getSchoolSettings().then(setSchoolSettings) }, [])
+
+  async function handleSchoolSettingBlur(key: string, value: string) {
+    await setSchoolSetting(key, value)
+  }
 
   // Closures
   const [closures, setClosures] = useState<SchoolClosure[]>([])
@@ -409,6 +418,41 @@ export default function SettingsPage() {
                   </Button>
                 </div>
               </div>
+            </div>
+
+
+            {/* School Details */}
+            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+              <div className="flex items-center gap-2 px-6 py-3 bg-slate-50 border-b border-slate-100">
+                <span className="text-sm font-semibold text-slate-700">School Details</span>
+                <span className="text-xs text-slate-400 ml-1">Used on invoices</span>
+              </div>
+              {schoolSettings === null ? (
+                <p className="px-6 py-4 text-sm text-slate-400">Loading...</p>
+              ) : (
+                <div className="px-6 py-4 grid grid-cols-2 gap-4">
+                  {([
+                    { key: 'school_name', label: 'School Name' },
+                    { key: 'school_email', label: 'Email' },
+                    { key: 'school_address', label: 'Address' },
+                    { key: 'school_phone', label: 'Phone' },
+                    { key: 'bank_name', label: 'Bank Name' },
+                    { key: 'tax_number', label: 'Tax Number' },
+                    { key: 'iban', label: 'IBAN' },
+                    { key: 'bic', label: 'BIC' },
+                  ] as { key: keyof SchoolSettings; label: string }[]).map(({ key, label }) => (
+                    <div key={key}>
+                      <label className="block text-xs font-medium text-slate-500 mb-1">{label}</label>
+                      <input
+                        defaultValue={schoolSettings[key]}
+                        onBlur={e => handleSchoolSettingBlur(key, e.target.value)}
+                        placeholder={`Enter ${label.toLowerCase()}...`}
+                        className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </>
         )}

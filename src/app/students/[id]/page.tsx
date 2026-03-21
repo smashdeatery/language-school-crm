@@ -9,10 +9,11 @@ import { Textarea } from '@/components/ui/textarea'
 import { createClient } from '@/lib/supabase/client'
 import { verifyAdminPin, getAdminFieldDefs, saveAdminData } from '@/actions/admin'
 import type { AdminFieldDef } from '@/actions/admin'
+import { getStudentInvoices, createInvoice, type Invoice } from '@/actions/invoices'
 import { useEffect, useState, use } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Pencil, Trash2, Lock, Unlock, Eye, EyeOff } from 'lucide-react'
+import { ArrowLeft, Pencil, Trash2, Lock, Unlock, Eye, EyeOff, Plus, FileText } from 'lucide-react'
 
 interface Student {
   id: string
@@ -76,6 +77,16 @@ export default function StudentProfilePage({ params }: { params: Promise<{ id: s
   const [city, setCity] = useState('')
   const [notes, setNotes] = useState('')
 
+  // Invoices
+  const [invoices, setInvoices] = useState<Invoice[]>([])
+  const [invoiceDialogOpen, setInvoiceDialogOpen] = useState(false)
+  const [invCourseId, setInvCourseId] = useState('')
+  const [invAmount, setInvAmount] = useState('')
+  const [invDescription, setInvDescription] = useState('')
+  const [invDueDate, setInvDueDate] = useState('')
+  const [invNotes, setInvNotes] = useState('')
+  const [creatingInvoice, setCreatingInvoice] = useState(false)
+
   // Admin section state
   const [adminUnlocked, setAdminUnlocked] = useState(false)
   const [pinInput, setPinInput] = useState('')
@@ -89,14 +100,16 @@ export default function StudentProfilePage({ params }: { params: Promise<{ id: s
   const [savingField, setSavingField] = useState(false)
 
   async function load() {
-    const [{ data: s }, { data: e }] = await Promise.all([
+    const [{ data: s }, { data: e }, invs] = await Promise.all([
       supabase.from('students').select('*').eq('id', id).single(),
       supabase.from('enrollments').select('*, course:courses(id, name, level, type)')
         .eq('student_id', id).order('enrolled_at', { ascending: false }),
+      getStudentInvoices(id),
     ])
     setStudent(s)
     setAdminValues(s?.admin_data ?? {})
     setEnrollments(e ?? [])
+    setInvoices(invs)
     setLoading(false)
   }
 
@@ -225,6 +238,25 @@ export default function StudentProfilePage({ params }: { params: Promise<{ id: s
     await saveAdminData(student.id, updated)
     setSavingField(false)
     setEditingFieldId(null)
+  }
+
+  async function handleCreateInvoice() {
+    if (!invAmount) return
+    setCreatingInvoice(true)
+    const invId = await createInvoice({
+      studentId: id,
+      courseId: invCourseId || null,
+      amount: parseFloat(invAmount),
+      description: invDescription,
+      dueDate: invDueDate,
+      notes: invNotes,
+    })
+    setCreatingInvoice(false)
+    setInvoiceDialogOpen(false)
+    setInvAmount(''); setInvDescription(''); setInvDueDate(''); setInvNotes(''); setInvCourseId('')
+    if (invId) {
+      load()
+    }
   }
 
   if (loading) return <AppShell><p className="text-slate-500">Loading...</p></AppShell>
@@ -459,6 +491,45 @@ export default function StudentProfilePage({ params }: { params: Promise<{ id: s
           )}
         </div>
 
+        {/* Invoices */}
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold text-slate-700 uppercase tracking-wide">Invoices</h2>
+            <button
+              onClick={() => setInvoiceDialogOpen(true)}
+              className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium"
+            >
+              <Plus size={13} /> Create Invoice
+            </button>
+          </div>
+          {invoices.length === 0 ? (
+            <p className="text-sm text-slate-400 bg-white rounded-xl border border-slate-200 px-6 py-5">No invoices yet.</p>
+          ) : (
+            <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100">
+              {invoices.map(inv => {
+                const c = inv.course as { name: string; level: string } | null | undefined
+                return (
+                  <Link key={inv.id} href={`/invoices/${inv.id}`} className="flex items-center justify-between px-6 py-3 hover:bg-slate-50 transition-colors">
+                    <div className="flex items-center gap-3">
+                      <FileText size={15} className="text-slate-300 shrink-0" />
+                      <div>
+                        <p className="text-sm font-medium text-slate-800">{inv.invoice_number}</p>
+                        <p className="text-xs text-slate-400">{c ? `${c.level} — ${c.name}` : inv.description || '—'}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm font-semibold text-slate-700">€{Number(inv.amount).toFixed(2)}</span>
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${inv.status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                        {inv.status === 'paid' ? 'Paid' : 'Unpaid'}
+                      </span>
+                    </div>
+                  </Link>
+                )
+              })}
+            </div>
+          )}
+        </div>
+
         {/* Active Courses */}
         <div>
           <h2 className="text-sm font-semibold text-slate-700 mb-3 uppercase tracking-wide">Active Courses</h2>
@@ -552,6 +623,34 @@ export default function StudentProfilePage({ params }: { params: Promise<{ id: s
             <Button variant="secondary" onClick={() => setEditOpen(false)}>Cancel</Button>
             <Button onClick={handleSaveStudent} disabled={saving || (!firstName.trim() && !lastName.trim())}>
               {saving ? 'Saving...' : 'Save'}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+      {/* Create Invoice Dialog */}
+      <Dialog open={invoiceDialogOpen} onClose={() => setInvoiceDialogOpen(false)} title="Create Invoice" className="max-w-md">
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Course (optional)</label>
+            <select
+              value={invCourseId}
+              onChange={e => setInvCourseId(e.target.value)}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">— No specific course —</option>
+              {enrollments.map(e => (
+                <option key={e.id} value={e.course.id}>{e.course.level} — {e.course.name}</option>
+              ))}
+            </select>
+          </div>
+          <Input label="Amount (€) *" type="number" step="0.01" min="0" value={invAmount} onChange={e => setInvAmount(e.target.value)} placeholder="250.00" autoFocus />
+          <Input label="Description" value={invDescription} onChange={e => setInvDescription(e.target.value)} placeholder="e.g. A2 course fees — Spring 2026" />
+          <Input label="Due Date" type="date" value={invDueDate} onChange={e => setInvDueDate(e.target.value)} />
+          <Input label="Notes" value={invNotes} onChange={e => setInvNotes(e.target.value)} placeholder="Any additional notes..." />
+          <div className="flex justify-end gap-3 pt-2">
+            <Button variant="secondary" onClick={() => setInvoiceDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleCreateInvoice} disabled={creatingInvoice || !invAmount}>
+              {creatingInvoice ? 'Creating...' : 'Create Invoice'}
             </Button>
           </div>
         </div>
