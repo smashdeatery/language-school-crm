@@ -21,8 +21,14 @@ interface Teacher {
   is_active: boolean
 }
 
+interface TeacherStats {
+  past: number
+  future: number
+}
+
 export default function TeachersPage() {
   const [teachers, setTeachers] = useState<Teacher[]>([])
+  const [stats, setStats] = useState<Record<string, TeacherStats>>({})
   const [loading, setLoading] = useState(true)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingTeacher, setEditingTeacher] = useState<Teacher | null>(null)
@@ -33,12 +39,21 @@ export default function TeachersPage() {
   const supabase = createClient()
 
   async function load() {
-    const { data } = await supabase
-      .from('teachers')
-      .select('*')
-      .eq('is_active', true)
-      .order('name')
-    setTeachers(data ?? [])
+    const today = new Date().toISOString().split('T')[0]
+    const [{ data: teacherData }, { data: sessionData }] = await Promise.all([
+      supabase.from('teachers').select('*').eq('is_active', true).order('name'),
+      supabase.from('sessions').select('teacher_id, session_date').not('teacher_id', 'is', null),
+    ])
+    setTeachers(teacherData ?? [])
+
+    // Compute past/future session counts per teacher
+    const computed: Record<string, TeacherStats> = {}
+    sessionData?.forEach((s: { teacher_id: string; session_date: string }) => {
+      if (!computed[s.teacher_id]) computed[s.teacher_id] = { past: 0, future: 0 }
+      if (s.session_date < today) computed[s.teacher_id].past++
+      else computed[s.teacher_id].future++
+    })
+    setStats(computed)
     setLoading(false)
   }
 
@@ -98,33 +113,66 @@ export default function TeachersPage() {
           </div>
         ) : (
           <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100">
-            {teachers.map((teacher) => (
-              <div key={teacher.id} className="flex items-center justify-between px-6 py-4">
-                <div className="flex items-center gap-3">
-                  <div
-                    className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold"
-                    style={{ backgroundColor: teacher.color ?? '#94a3b8' }}
-                  >
-                    {teacher.name.charAt(0).toUpperCase()}
+            {teachers.map((teacher) => {
+              const s = stats[teacher.id] ?? { past: 0, future: 0 }
+              const total = s.past + s.future
+              return (
+                <div key={teacher.id} className="px-6 py-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div
+                        className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0"
+                        style={{ backgroundColor: teacher.color ?? '#94a3b8' }}
+                      >
+                        {teacher.name.charAt(0).toUpperCase()}
+                      </div>
+                      <span className="font-semibold text-slate-900">{teacher.name}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => openEdit(teacher)}
+                        className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+                      >
+                        <Pencil size={15} />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(teacher.id)}
+                        className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
                   </div>
-                  <span className="font-medium text-slate-900">{teacher.name}</span>
+
+                  {/* Stats row */}
+                  <div className="mt-3 grid grid-cols-4 gap-2">
+                    <div className="bg-slate-50 rounded-lg px-3 py-2 text-center">
+                      <p className="text-xs text-slate-400 mb-0.5">Past</p>
+                      <p className="text-base font-bold text-slate-700">{s.past}</p>
+                      <p className="text-xs text-slate-400">sessions</p>
+                    </div>
+                    <div className="bg-blue-50 rounded-lg px-3 py-2 text-center">
+                      <p className="text-xs text-blue-400 mb-0.5">Upcoming</p>
+                      <p className="text-base font-bold text-blue-700">{s.future}</p>
+                      <p className="text-xs text-blue-400">sessions</p>
+                    </div>
+                    <div className="bg-slate-50 rounded-lg px-3 py-2 text-center border-l-2 border-slate-200">
+                      <p className="text-xs text-slate-400 mb-0.5">Total</p>
+                      <p className="text-base font-bold text-slate-800">{total}</p>
+                      <p className="text-xs text-slate-400">sessions</p>
+                    </div>
+                    <div
+                      className="rounded-lg px-3 py-2 text-center"
+                      style={{ backgroundColor: (teacher.color ?? '#94a3b8') + '18' }}
+                    >
+                      <p className="text-xs mb-0.5" style={{ color: teacher.color ?? '#94a3b8' }}>Total UE</p>
+                      <p className="text-base font-bold" style={{ color: teacher.color ?? '#94a3b8' }}>{total}</p>
+                      <p className="text-xs" style={{ color: teacher.color ?? '#94a3b8' }}>teaching units</p>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => openEdit(teacher)}
-                    className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
-                  >
-                    <Pencil size={15} />
-                  </button>
-                  <button
-                    onClick={() => handleDelete(teacher.id)}
-                    className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                  >
-                    <Trash2 size={15} />
-                  </button>
-                </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>
