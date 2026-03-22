@@ -145,6 +145,12 @@ export default function CourseOverviewPage({ params }: { params: Promise<{ id: s
   async function handleSaveCourse() {
     if (!editName.trim()) return
     setSaving(true)
+
+    const scheduleChanged =
+      editStartDate !== course!.start_date ||
+      parseInt(editTotalSessions) !== course!.total_sessions ||
+      JSON.stringify([...editDays].sort()) !== JSON.stringify([...(course!.schedule_days ?? [])].sort())
+
     await supabase.from('courses').update({
       name: editName.trim(),
       level: editLevel,
@@ -156,38 +162,38 @@ export default function CourseOverviewPage({ params }: { params: Promise<{ id: s
       materials: editMaterials.trim() || null,
       is_active: editIsActive,
     }).eq('id', id)
+
     setSaving(false)
     setEditOpen(false)
-    load()
+
+    if (scheduleChanged) {
+      // Reload course state first so regenerate uses the new values
+      await load()
+      await regenerateSessions(editStartDate, editDays as DayOfWeek[], parseInt(editTotalSessions) || 0)
+    } else {
+      load()
+    }
   }
 
-  async function handleRegenerateSessions() {
-    if (!course) return
-    if (!window.confirm(
-      `This will delete all ${sessions.length} existing sessions for "${course.name}" and regenerate them, skipping holidays and closures. Continue?`
-    )) return
-
+  async function regenerateSessions(startDate: string, scheduleDays: DayOfWeek[], totalSessions: number) {
     setRegenerating(true)
-
-    // Build closed dates set — holidays 2 years out from start date
-    const endDate = new Date(course.start_date)
+    const endDate = new Date(startDate)
     endDate.setFullYear(endDate.getFullYear() + 2)
     const endIso = endDate.toISOString().split('T')[0]
-    const holidays = getHolidaysForRange(course.start_date, endIso)
+    const holidays = getHolidaysForRange(startDate, endIso)
     const closures = await getClosures()
     const closedDates = new Set<string>()
     holidays.forEach(h => closedDates.add(h.date))
-    closures.forEach(c => closedDates.add(c.date))
-
-    // Generate new session dates skipping closed days
-    const dates = generateSessionDates(
-      new Date(course.start_date),
-      course.schedule_days as DayOfWeek[],
-      course.total_sessions,
-      closedDates
-    )
-
-    // Delete all existing sessions then re-insert
+    closures.forEach(c => {
+      const end = c.end_date && c.end_date > c.date ? c.end_date : c.date
+      let d = new Date(c.date + 'T12:00:00')
+      const endD = new Date(end + 'T12:00:00')
+      while (d <= endD) {
+        closedDates.add(format(d, 'yyyy-MM-dd'))
+        d = addDays(d, 1)
+      }
+    })
+    const dates = generateSessionDates(new Date(startDate), scheduleDays, totalSessions, closedDates)
     await supabase.from('sessions').delete().eq('course_id', id)
     await supabase.from('sessions').insert(
       dates.map((date, i) => ({
@@ -196,9 +202,16 @@ export default function CourseOverviewPage({ params }: { params: Promise<{ id: s
         session_date: format(date, 'yyyy-MM-dd'),
       }))
     )
-
     setRegenerating(false)
     load()
+  }
+
+  async function handleRegenerateSessions() {
+    if (!course) return
+    if (!window.confirm(
+      `This will delete all ${sessions.length} existing sessions for "${course.name}" and regenerate them, skipping holidays and closures. Continue?`
+    )) return
+    await regenerateSessions(course.start_date, course.schedule_days as DayOfWeek[], course.total_sessions)
   }
 
   function toggleDay(day: string) {
