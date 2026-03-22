@@ -50,6 +50,7 @@ export default function CourseOverviewPage({ params }: { params: Promise<{ id: s
   const [course, setCourse] = useState<Course | null>(null)
   const [sessions, setSessions] = useState<Session[]>([])
   const [enrollments, setEnrollments] = useState<Enrollment[]>([])
+  const [attendanceBySession, setAttendanceBySession] = useState<Record<string, Record<string, string | null>>>({})
   const [loading, setLoading] = useState(true)
   const [expandedSession, setExpandedSession] = useState<string | null>(null)
   const [enrollDialogOpen, setEnrollDialogOpen] = useState(false)
@@ -91,6 +92,22 @@ export default function CourseOverviewPage({ params }: { params: Promise<{ id: s
         student: Array.isArray(row.student) ? row.student[0] : row.student,
       })) as Enrollment[]
     )
+
+    // Load all attendance for the course upfront so counts are correct without expanding
+    if (s && s.length > 0) {
+      const sessionIds = s.map((x: any) => x.id)
+      const { data: att } = await supabase
+        .from('attendance')
+        .select('session_id, student_id, status')
+        .in('session_id', sessionIds)
+      const bySession: Record<string, Record<string, string | null>> = {}
+      att?.forEach((a: any) => {
+        if (!bySession[a.session_id]) bySession[a.session_id] = {}
+        bySession[a.session_id][a.student_id] = a.status
+      })
+      setAttendanceBySession(bySession)
+    }
+
     setLoading(false)
 
     // Load holidays once we have the course date range
@@ -390,6 +407,7 @@ export default function CourseOverviewPage({ params }: { params: Promise<{ id: s
                   enrollments={enrollments}
                   expanded={expandedSession === session.id}
                   closureName={closureDateMap.get(session.session_date)}
+                  initialAttendanceMap={attendanceBySession[session.id] ?? {}}
                   onToggle={() =>
                     setExpandedSession(expandedSession === session.id ? null : session.id)
                   }
@@ -537,13 +555,18 @@ export default function CourseOverviewPage({ params }: { params: Promise<{ id: s
 }
 
 function SessionRow({
-  session, courseId, enrollments, expanded, closureName, onToggle,
+  session, courseId, enrollments, expanded, closureName, initialAttendanceMap, onToggle,
 }: {
   session: Session; courseId: string; enrollments: Enrollment[]
-  expanded: boolean; closureName: string | undefined; onToggle: () => void
+  expanded: boolean; closureName: string | undefined
+  initialAttendanceMap: Record<string, string | null>; onToggle: () => void
 }) {
-  const [attendanceMap, setAttendanceMap] = useState<Record<string, string | null>>({})
+  const [attendanceMap, setAttendanceMap] = useState<Record<string, string | null>>(initialAttendanceMap)
   const supabase = createClient()
+
+  useEffect(() => {
+    setAttendanceMap(initialAttendanceMap)
+  }, [initialAttendanceMap])
 
   useEffect(() => {
     if (!expanded) return
