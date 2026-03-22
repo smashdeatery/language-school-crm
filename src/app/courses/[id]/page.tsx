@@ -13,7 +13,7 @@ import { addDays, format } from 'date-fns'
 import type { DayOfWeek } from '@/types/database'
 import { useEffect, useState, use } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, ChevronDown, ChevronRight, Pencil, Plus, RefreshCw, Search, UserPlus } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronRight, Pencil, Plus, RefreshCw, Search, UserPlus, X } from 'lucide-react'
 
 const LEVELS = ['A1.1','A1.2','A2.1','A2.2','B1.1','B1.2','B2.1','B2.2','C1','C2']
 const TYPES = ['extensive','intensive','private']
@@ -53,6 +53,7 @@ export default function CourseOverviewPage({ params }: { params: Promise<{ id: s
   const [loading, setLoading] = useState(true)
   const [expandedSession, setExpandedSession] = useState<string | null>(null)
   const [enrollDialogOpen, setEnrollDialogOpen] = useState(false)
+  const [editingStudents, setEditingStudents] = useState(false)
   const [allStudents, setAllStudents] = useState<{ id: string; name: string }[]>([])
   const [studentSearch, setStudentSearch] = useState('')
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set())
@@ -290,23 +291,54 @@ export default function CourseOverviewPage({ params }: { params: Promise<{ id: s
         {/* Enrolled students */}
         {enrollments.length > 0 && (
           <div className="bg-white rounded-xl border border-slate-200 px-6 py-4">
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">
-              Students ({enrollments.filter((e) => e.status === 'active').length} active)
-            </p>
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                Students ({enrollments.filter((e) => e.status === 'active').length} active)
+              </p>
+              <button
+                onClick={() => setEditingStudents(!editingStudents)}
+                className={`text-xs font-medium px-2.5 py-1 rounded-full transition-colors ${
+                  editingStudents
+                    ? 'bg-slate-700 text-white'
+                    : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                }`}
+              >
+                {editingStudents ? 'Done' : 'Edit'}
+              </button>
+            </div>
             <div className="flex flex-wrap gap-2">
-              {enrollments.map((e) => (
-                <Link
-                  key={e.id}
-                  href={`/students/${e.student.id}`}
-                  className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
-                    e.status === 'active'
-                      ? 'bg-slate-50 border-slate-200 text-slate-700 hover:border-blue-300 hover:text-blue-700'
-                      : 'bg-slate-50 border-slate-100 text-slate-400 line-through'
-                  }`}
-                >
-                  {e.student.name}
-                </Link>
-              ))}
+              {enrollments.map((e) =>
+                editingStudents ? (
+                  <span
+                    key={e.id}
+                    className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-full border bg-red-50 border-red-200 text-red-700"
+                  >
+                    {e.student.name}
+                    <button
+                      onClick={async () => {
+                        if (!confirm(`Remove ${e.student.name} from this course?`)) return
+                        await supabase.from('enrollments').delete().eq('id', e.id)
+                        load()
+                      }}
+                      className="ml-0.5 hover:text-red-900"
+                    >
+                      <X size={11} />
+                    </button>
+                  </span>
+                ) : (
+                  <Link
+                    key={e.id}
+                    href={`/students/${e.student.id}`}
+                    className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
+                      e.status === 'active'
+                        ? 'bg-slate-50 border-slate-200 text-slate-700 hover:border-blue-300 hover:text-blue-700'
+                        : 'bg-slate-50 border-slate-100 text-slate-400 line-through'
+                    }`}
+                  >
+                    {e.student.name}
+                  </Link>
+                )
+              )}
             </div>
           </div>
         )}
