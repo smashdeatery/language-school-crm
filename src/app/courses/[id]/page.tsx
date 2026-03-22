@@ -55,6 +55,7 @@ export default function CourseOverviewPage({ params }: { params: Promise<{ id: s
   const [enrollDialogOpen, setEnrollDialogOpen] = useState(false)
   const [allStudents, setAllStudents] = useState<{ id: string; name: string }[]>([])
   const [studentSearch, setStudentSearch] = useState('')
+  const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set())
   const [enrolling, setEnrolling] = useState(false)
 
   // Holiday/closure data
@@ -125,7 +126,32 @@ export default function CourseOverviewPage({ params }: { params: Promise<{ id: s
     const { data } = await supabase.from('students').select('id, name').eq('is_active', true).order('name')
     setAllStudents(data ?? [])
     setStudentSearch('')
+    setSelectedStudentIds(new Set())
     setEnrollDialogOpen(true)
+  }
+
+  function toggleStudentSelection(studentId: string) {
+    setSelectedStudentIds(prev => {
+      const next = new Set(prev)
+      next.has(studentId) ? next.delete(studentId) : next.add(studentId)
+      return next
+    })
+  }
+
+  async function handleBulkEnroll() {
+    if (selectedStudentIds.size === 0) return
+    setEnrolling(true)
+    await supabase.from('enrollments').upsert(
+      [...selectedStudentIds].map(studentId => ({
+        student_id: studentId,
+        course_id: id,
+        status: 'active',
+      })),
+      { onConflict: 'student_id,course_id' }
+    )
+    setEnrolling(false)
+    setEnrollDialogOpen(false)
+    load()
   }
 
   function openEdit() {
@@ -223,16 +249,6 @@ export default function CourseOverviewPage({ params }: { params: Promise<{ id: s
     (s) => !enrolledIds.has(s.id) && s.name.toLowerCase().includes(studentSearch.toLowerCase())
   )
 
-  async function handleEnroll(studentId: string) {
-    setEnrolling(true)
-    await supabase.from('enrollments').upsert(
-      { student_id: studentId, course_id: id, status: 'active' },
-      { onConflict: 'student_id,course_id' }
-    )
-    setEnrolling(false)
-    setEnrollDialogOpen(false)
-    load()
-  }
 
   if (loading) return <AppShell><p className="text-slate-500">Loading...</p></AppShell>
   if (!course) return <AppShell><p className="text-slate-500">Course not found.</p></AppShell>
@@ -425,47 +441,62 @@ export default function CourseOverviewPage({ params }: { params: Promise<{ id: s
       </Dialog>
 
       {/* Enroll Student Dialog */}
-      <Dialog open={enrollDialogOpen} onClose={() => setEnrollDialogOpen(false)} title="Enroll Student">
-        <div className="space-y-4">
+      <Dialog open={enrollDialogOpen} onClose={() => setEnrollDialogOpen(false)} title="Enroll Students">
+        <div className="space-y-3">
           <div className="relative">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               value={studentSearch}
               onChange={(e) => setStudentSearch(e.target.value)}
               placeholder="Search students..."
+              autoFocus
               className="w-full pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
-          <div className="max-h-64 overflow-y-auto space-y-1">
+
+          <div className="max-h-72 overflow-y-auto space-y-0.5">
             {availableStudents.length === 0 ? (
               <p className="text-sm text-slate-400 text-center py-4">
                 {studentSearch ? 'No students match.' : 'All students are already enrolled.'}
               </p>
             ) : (
-              availableStudents.map((s) => (
-                <button
-                  key={s.id}
-                  onClick={() => handleEnroll(s.id)}
-                  disabled={enrolling}
-                  className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg hover:bg-blue-50 text-left transition-colors group"
-                >
-                  <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center text-xs font-semibold text-slate-600">
-                      {s.name.charAt(0)}
+              availableStudents.map((s) => {
+                const selected = selectedStudentIds.has(s.id)
+                return (
+                  <button
+                    key={s.id}
+                    onClick={() => toggleStudentSelection(s.id)}
+                    className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-left transition-colors ${
+                      selected ? 'bg-blue-50 border border-blue-200' : 'hover:bg-slate-50 border border-transparent'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold ${
+                        selected ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
+                      }`}>
+                        {selected ? '✓' : s.name.charAt(0)}
+                      </div>
+                      <span className={`text-sm ${selected ? 'text-blue-800 font-medium' : 'text-slate-900'}`}>{s.name}</span>
                     </div>
-                    <span className="text-sm text-slate-900">{s.name}</span>
-                  </div>
-                  <Plus size={14} className="text-slate-300 group-hover:text-blue-600" />
-                </button>
-              ))
+                    {!selected && <Plus size={14} className="text-slate-300" />}
+                  </button>
+                )
+              })
             )}
           </div>
-          <div className="pt-2 border-t border-slate-100">
+
+          <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-3">
             <Link href="/students">
               <Button variant="ghost" size="sm">
-                <Plus size={14} /> Add new student first
+                <Plus size={14} /> New student
               </Button>
             </Link>
+            <Button
+              onClick={handleBulkEnroll}
+              disabled={enrolling || selectedStudentIds.size === 0}
+            >
+              {enrolling ? 'Enrolling...' : `Enroll ${selectedStudentIds.size > 0 ? selectedStudentIds.size : ''} student${selectedStudentIds.size !== 1 ? 's' : ''}`}
+            </Button>
           </div>
         </div>
       </Dialog>
