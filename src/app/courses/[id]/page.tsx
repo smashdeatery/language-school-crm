@@ -9,6 +9,7 @@ import { createClient } from '@/lib/supabase/client'
 import { formatSessionDate, generateSessionDates } from '@/lib/utils/session-generator'
 import { getHolidaysForRange, type PublicHoliday } from '@/lib/utils/holidays'
 import { getClosures, type SchoolClosure } from '@/actions/closures'
+import { syncSessionsToCalendar, deleteSessionsFromCalendar } from '@/actions/calendar-sync'
 import { addDays, format } from 'date-fns'
 import type { DayOfWeek } from '@/types/database'
 import { useEffect, useState, use } from 'react'
@@ -238,16 +239,32 @@ export default function CourseOverviewPage({ params }: { params: Promise<{ id: s
       }
     })
     const dates = generateSessionDates(new Date(startDate), scheduleDays, totalSessions, closedDates)
+
+    // Delete old Google Calendar events before removing sessions
+    await deleteSessionsFromCalendar(id)
+
     await supabase.from('sessions').delete().eq('course_id', id)
-    await supabase.from('sessions').insert(
+    const { data: newSessions } = await supabase.from('sessions').insert(
       dates.map((date, i) => ({
         course_id: id,
         session_number: i + 1,
         session_date: format(date, 'yyyy-MM-dd'),
       }))
-    )
+    ).select('id, session_date')
+
     setRegenerating(false)
     load()
+
+    // Fire-and-forget Google Calendar sync for new sessions
+    if (newSessions?.length && course) {
+      syncSessionsToCalendar(
+        newSessions,
+        course.name,
+        course.level,
+        course.schedule_time,
+        null
+      ).catch(() => {/* silently ignore */})
+    }
   }
 
   async function handleRegenerateSessions() {

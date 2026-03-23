@@ -13,6 +13,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, Calendar } from 'lucide-react'
 import type { DayOfWeek } from '@/types/database'
+import { syncSessionsToCalendar } from '@/actions/calendar-sync'
 
 const LEVELS = ['A1.1','A1.2','A2.1','A2.2','B1.1','B1.2','B2.1','B2.2','C1','C2']
 const DAYS: { value: DayOfWeek; label: string }[] = [
@@ -95,9 +96,23 @@ export default function NewCoursePage() {
       session_date: format(date, 'yyyy-MM-dd'),
     }))
 
-    await supabase.from('sessions').insert(sessionRows)
+    const { data: insertedSessions } = await supabase
+      .from('sessions')
+      .insert(sessionRows)
+      .select('id, session_date')
 
     router.push(`/courses/${course.id}`)
+
+    // Fire-and-forget Google Calendar sync (non-blocking)
+    if (insertedSessions?.length) {
+      syncSessionsToCalendar(
+        insertedSessions,
+        course.name,
+        course.level,
+        course.schedule_time,
+        null
+      ).catch(() => {/* silently ignore if Google sync fails */})
+    }
   }
 
   return (
