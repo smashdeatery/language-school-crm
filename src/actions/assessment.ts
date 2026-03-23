@@ -59,7 +59,7 @@ export async function createPendingStudent(
       last_name,
       mobile: phone.trim() || null,
       email: email.trim() || null,
-      customer_type: 'Pending Assessment',
+      customer_type: 'Close, Place and Invoice',
       is_active: true,
       admin_data: adminData,
     })
