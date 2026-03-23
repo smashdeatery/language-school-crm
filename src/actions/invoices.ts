@@ -89,14 +89,40 @@ export async function createInvoice({
     .single()
 
   if (error) return null
+
+  // Move student to "Invoiced - Waiting for Payment"
+  await supabase
+    .from('students')
+    .update({ customer_type: 'Invoiced - Waiting for Payment' })
+    .eq('id', studentId)
+    .in('customer_type', ['Close, Place and Invoice', 'Pending Assessment'])
+
   return data?.id ?? null
 }
 
 export async function markPaid(id: string): Promise<void> {
-  await serviceClient()
+  const supabase = serviceClient()
+
+  // Get the student_id from the invoice first
+  const { data: inv } = await supabase
+    .from('invoices')
+    .select('student_id')
+    .eq('id', id)
+    .single()
+
+  await supabase
     .from('invoices')
     .update({ status: 'paid', paid_at: new Date().toISOString() })
     .eq('id', id)
+
+  // Move student to Active
+  if (inv?.student_id) {
+    await supabase
+      .from('students')
+      .update({ customer_type: null, is_active: true })
+      .eq('id', inv.student_id)
+      .eq('customer_type', 'Invoiced - Waiting for Payment')
+  }
 }
 
 export async function markUnpaid(id: string): Promise<void> {

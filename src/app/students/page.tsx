@@ -140,8 +140,14 @@ export default function StudentsPage() {
         {loading ? (
           <p className="text-slate-500 text-sm">Loading...</p>
         ) : (() => {
+          const toClose = filtered.filter(s => s.customer_type === 'Close, Place and Invoice')
+          const invoiced = filtered.filter(s => s.customer_type === 'Invoiced - Waiting for Payment')
           const pending = filtered.filter(s => s.customer_type === 'Pending Assessment')
-          const regular = filtered.filter(s => s.customer_type !== 'Pending Assessment')
+          const regular = filtered.filter(s =>
+            s.customer_type !== 'Pending Assessment' &&
+            s.customer_type !== 'Close, Place and Invoice' &&
+            s.customer_type !== 'Invoiced - Waiting for Payment'
+          )
 
           const renderRow = (student: Student) => {
             const display = fullName(student)
@@ -183,6 +189,70 @@ export default function StudentsPage() {
 
           return (
             <>
+              {toClose.length > 0 && (
+                <div className="rounded-xl border border-red-200 bg-red-50 overflow-hidden">
+                  <div className="px-6 py-3 border-b border-red-200 flex items-center gap-2">
+                    <span className="text-xs font-semibold text-red-700 uppercase tracking-wide">Close, Place and Invoice</span>
+                    <span className="text-xs bg-red-200 text-red-800 rounded-full px-2 py-0.5 font-mono">{toClose.length}</span>
+                  </div>
+                  <div className="divide-y divide-red-100">
+                    {toClose.map(student => (
+                      <Link
+                        key={student.id}
+                        href={`/students/${student.id}`}
+                        className="flex items-center justify-between px-6 py-4 hover:bg-red-100/50 transition-colors"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-12 h-8 rounded-lg bg-red-100 flex items-center justify-center text-red-600 text-xs font-mono font-semibold shrink-0">
+                            {student.student_number ?? '—'}
+                          </div>
+                          <div>
+                            <p className="font-medium text-sm text-slate-900">{fullName(student)}</p>
+                            {student.email && <p className="text-xs text-slate-500">{student.email}</p>}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs px-2.5 py-1 rounded-full font-medium bg-red-200 text-red-800">Action needed</span>
+                          <span className="text-xs text-slate-400">View →</span>
+                        </div>
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {invoiced.length > 0 && (
+                <div className="rounded-xl border border-orange-200 bg-orange-50 overflow-hidden">
+                  <div className="px-6 py-3 border-b border-orange-200 flex items-center gap-2">
+                    <span className="text-xs font-semibold text-orange-700 uppercase tracking-wide">Invoiced — Waiting for Payment</span>
+                    <span className="text-xs bg-orange-200 text-orange-800 rounded-full px-2 py-0.5 font-mono">{invoiced.length}</span>
+                  </div>
+                  <div className="divide-y divide-orange-100">
+                    {invoiced.map(student => (
+                      <Link
+                        key={student.id}
+                        href={`/students/${student.id}`}
+                        className="flex items-center justify-between px-6 py-4 hover:bg-orange-100/50 transition-colors"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-12 h-8 rounded-lg bg-orange-100 flex items-center justify-center text-orange-600 text-xs font-mono font-semibold shrink-0">
+                            {student.student_number ?? '—'}
+                          </div>
+                          <div>
+                            <p className="font-medium text-sm text-slate-900">{fullName(student)}</p>
+                            {student.email && <p className="text-xs text-slate-500">{student.email}</p>}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs px-2.5 py-1 rounded-full font-medium bg-orange-200 text-orange-800">Awaiting payment</span>
+                          <span className="text-xs text-slate-400">View →</span>
+                        </div>
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {pending.length > 0 && (
                 <div className="rounded-xl border border-amber-200 bg-amber-50 overflow-hidden">
                   <div className="px-6 py-3 border-b border-amber-200 flex items-center gap-2">
@@ -215,7 +285,7 @@ export default function StudentsPage() {
                 </div>
               )}
 
-              {regular.length === 0 && pending.length === 0 ? (
+              {regular.length === 0 && pending.length === 0 && toClose.length === 0 && invoiced.length === 0 ? (
                 <div className="bg-white rounded-xl border border-slate-200 p-12 text-center">
                   <p className="text-slate-500 text-sm mb-4">
                     {search ? 'No students match your search.' : 'No students added yet.'}
