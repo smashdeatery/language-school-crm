@@ -139,6 +139,7 @@ export default function CourseOverviewPage({ params }: { params: Promise<{ id: s
 
   const today = new Date().toISOString().split('T')[0]
   const nextSession = sessions.find((s) => s.session_date >= today)
+  const futureSessions = sessions.filter((s) => s.session_date >= today)
   const pastSessions = sessions.filter((s) => s.session_date < today).reverse()
 
   async function openEnrollDialog() {
@@ -377,44 +378,62 @@ export default function CourseOverviewPage({ params }: { params: Promise<{ id: s
           </div>
         )}
 
-        {/* Next Session CTA */}
-        {nextSession && (
-          <div className={`rounded-xl p-5 border ${closureDateMap.has(nextSession.session_date) ? 'bg-red-50 border-red-200' : 'bg-blue-50 border-blue-200'}`}>
-            <div className="flex items-center gap-2 mb-2">
-              <p className={`text-xs font-semibold uppercase tracking-wide ${closureDateMap.has(nextSession.session_date) ? 'text-red-600' : 'text-blue-600'}`}>
-                Next Session
-              </p>
-              {closureDateMap.has(nextSession.session_date) && (
-                <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-medium">
-                  ⚠ {closureDateMap.get(nextSession.session_date)}
-                </span>
-              )}
-            </div>
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="font-semibold text-slate-900">
-                  Session {nextSession.session_number} · {formatSessionDate(nextSession.session_date)}
-                  {nextSession.teacher && (
-                    <span className="ml-2 font-normal text-slate-600">· {nextSession.teacher.name}</span>
-                  )}
-                </p>
-                {nextSession.topic && (
-                  <p className="text-sm text-slate-600 mt-0.5">{nextSession.topic}</p>
-                )}
-              </div>
-              <Link href={`/courses/${id}/sessions/${nextSession.id}`}>
-                <Button size="sm">
-                  Open & Take Attendance <ChevronRight size={14} />
-                </Button>
-              </Link>
+        {/* Upcoming Sessions */}
+        {futureSessions.length > 0 && (
+          <div>
+            <p className="text-sm font-semibold text-slate-700 mb-3">
+              Upcoming Sessions
+              <span className="ml-2 text-xs font-mono bg-blue-100 text-blue-700 rounded-full px-2 py-0.5">{futureSessions.length}</span>
+            </p>
+            <div className="space-y-2">
+              {futureSessions.map((session) => {
+                const isNext = session.id === nextSession?.id
+                const closureName = closureDateMap.get(session.session_date)
+                return (
+                  <div key={session.id} className={`rounded-xl p-4 border flex items-center justify-between gap-4 ${
+                    closureName ? 'bg-red-50 border-red-200' :
+                    isNext ? 'bg-blue-50 border-blue-200' :
+                    'bg-white border-slate-200'
+                  }`}>
+                    <div>
+                      {isNext && (
+                        <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-1">Next Session</p>
+                      )}
+                      <p className="font-semibold text-slate-900 text-sm">
+                        Session {session.session_number} · {formatSessionDate(session.session_date)}
+                        {session.teacher && (
+                          <span className="ml-2 font-normal text-slate-600">· {session.teacher.name}</span>
+                        )}
+                      </p>
+                      {closureName && (
+                        <p className="text-xs text-red-600 mt-0.5">⚠ {closureName}</p>
+                      )}
+                      {session.topic && (
+                        <p className="text-xs text-slate-500 mt-0.5">{session.topic}</p>
+                      )}
+                    </div>
+                    {isNext && (
+                      <Link href={`/courses/${id}/sessions/${session.id}`}>
+                        <Button size="sm">
+                          Open & Take Attendance <ChevronRight size={14} />
+                        </Button>
+                      </Link>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           </div>
         )}
 
-        {/* Past Sessions */}
+        {/* Past Sessions — collapsed */}
         {pastSessions.length > 0 && (
-          <div>
-            <p className="text-sm font-semibold text-slate-700 mb-3">Past Sessions</p>
+          <details className="group">
+            <summary className="flex items-center gap-2 cursor-pointer list-none select-none text-sm font-semibold text-slate-500 mb-3 hover:text-slate-700 transition-colors">
+              <span className="transition-transform group-open:rotate-90 inline-block">›</span>
+              Past Sessions
+              <span className="text-xs font-mono bg-slate-100 text-slate-400 rounded-full px-2 py-0.5 normal-case font-normal">{pastSessions.length}</span>
+            </summary>
             <div className="space-y-2">
               {pastSessions.map((session) => (
                 <SessionRow
@@ -431,7 +450,7 @@ export default function CourseOverviewPage({ params }: { params: Promise<{ id: s
                 />
               ))}
             </div>
-          </div>
+          </details>
         )}
 
         {sessions.length === 0 && (
