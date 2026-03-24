@@ -412,13 +412,11 @@ export default function CourseOverviewPage({ params }: { params: Promise<{ id: s
                         <p className="text-xs text-slate-500 mt-0.5">{session.topic}</p>
                       )}
                     </div>
-                    {isNext && (
-                      <Link href={`/courses/${id}/sessions/${session.id}`}>
-                        <Button size="sm">
-                          Open & Take Attendance <ChevronRight size={14} />
-                        </Button>
-                      </Link>
-                    )}
+                    <Link href={`/courses/${id}/sessions/${session.id}`}>
+                      <Button size="sm" variant={isNext ? 'default' : 'outline'}>
+                        {isNext ? <>Open & Take Attendance <ChevronRight size={14} /></> : <>Open <ChevronRight size={14} /></>}
+                      </Button>
+                    </Link>
                   </div>
                 )
               })}
