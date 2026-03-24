@@ -101,11 +101,9 @@ export default function NewCoursePage() {
       .insert(sessionRows)
       .select('id, session_date')
 
-    router.push(`/courses/${course.id}`)
-
-    // Fire-and-forget Google Calendar sync (non-blocking)
+    // Sync to Google Calendar before navigating away
     if (insertedSessions?.length) {
-      syncSessionsToCalendar(
+      await syncSessionsToCalendar(
         insertedSessions,
         course.name,
         course.level,
@@ -113,6 +111,8 @@ export default function NewCoursePage() {
         null
       ).catch(() => {/* silently ignore if Google sync fails */})
     }
+
+    router.push(`/courses/${course.id}`)
   }
 
   return (

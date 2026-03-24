@@ -253,12 +253,9 @@ export default function CourseOverviewPage({ params }: { params: Promise<{ id: s
       }))
     ).select('id, session_date')
 
-    setRegenerating(false)
-    load()
-
-    // Fire-and-forget Google Calendar sync for new sessions
+    // Sync new sessions to Google Calendar
     if (newSessions?.length && course) {
-      syncSessionsToCalendar(
+      await syncSessionsToCalendar(
         newSessions,
         course.name,
         course.level,
@@ -266,6 +263,9 @@ export default function CourseOverviewPage({ params }: { params: Promise<{ id: s
         null
       ).catch(() => {/* silently ignore */})
     }
+
+    setRegenerating(false)
+    load()
   }
 
   async function handleRegenerateSessions() {
