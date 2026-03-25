@@ -35,6 +35,7 @@ export default function NewCoursePage() {
   const [type, setType] = useState('extensive')
   const [scheduleDays, setScheduleDays] = useState<DayOfWeek[]>([])
   const [scheduleTime, setScheduleTime] = useState('')
+  const [endTime, setEndTime] = useState('')
   const [startDate, setStartDate] = useState('')
   const [totalSessions, setTotalSessions] = useState('24')
   const [durationWeeks, setDurationWeeks] = useState('12')
@@ -78,6 +79,7 @@ export default function NewCoursePage() {
         duration_weeks: durationWeeks ? parseInt(durationWeeks) : null,
         schedule_days: scheduleDays,
         schedule_time: scheduleTime,
+        end_time: endTime.trim() || null,
         start_date: format(start, 'yyyy-MM-dd'),
         materials: materials.trim() || null,
       })
@@ -108,7 +110,8 @@ export default function NewCoursePage() {
         course.name,
         course.level,
         course.schedule_time,
-        null
+        null,
+        course.end_time ?? null
       ).catch(() => {/* silently ignore if Google sync fails */})
     }
 
@@ -187,12 +190,20 @@ export default function NewCoursePage() {
               </div>
             </div>
 
-            <Input
-              label="Time *"
-              value={scheduleTime}
-              onChange={(e) => setScheduleTime(e.target.value)}
-              placeholder="e.g. 18:45 - 20:15"
-            />
+            <div className="grid grid-cols-2 gap-4">
+              <Input
+                label="Start Time *"
+                type="time"
+                value={scheduleTime}
+                onChange={(e) => setScheduleTime(e.target.value)}
+              />
+              <Input
+                label="End Time"
+                type="time"
+                value={endTime}
+                onChange={(e) => setEndTime(e.target.value)}
+              />
+            </div>
 
             <div className="grid grid-cols-3 gap-4">
               <div className="col-span-2">

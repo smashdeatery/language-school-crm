@@ -19,6 +19,7 @@ function getAuthClient() {
 export async function createCalendarEvent(params: {
   sessionDate: string     // 'yyyy-MM-dd'
   scheduleTime: string    // 'HH:mm'
+  endTime?: string | null // 'HH:mm' — if omitted, defaults to +90 min
   courseName: string
   courseLevel: string
   teacherName: string | null
@@ -34,9 +35,17 @@ export async function createCalendarEvent(params: {
     const { auth, calendarId } = client
     const calendar = google.calendar({ version: 'v3', auth })
 
-    const [hour, minute] = params.scheduleTime.split(':').map(Number)
-    const startDateTime = new Date(`${params.sessionDate}T${params.scheduleTime}:00`)
-    const endDateTime = new Date(startDateTime.getTime() + 90 * 60 * 1000)
+    // Compute end time using pure string/number math to avoid UTC/timezone issues
+    let endTimeStr: string
+    if (params.endTime) {
+      endTimeStr = params.endTime
+    } else {
+      const [h, m] = params.scheduleTime.split(':').map(Number)
+      const totalMinutes = h * 60 + m + 90
+      const endH = Math.floor(totalMinutes / 60) % 24
+      const endM = totalMinutes % 60
+      endTimeStr = `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`
+    }
 
     const descriptionParts: string[] = []
     if (params.teacherName) descriptionParts.push(`Teacher: ${params.teacherName}`)
@@ -50,7 +59,7 @@ export async function createCalendarEvent(params: {
         timeZone: 'Europe/Berlin',
       },
       end: {
-        dateTime: endDateTime.toISOString().replace('Z', '').split('.')[0],
+        dateTime: `${params.sessionDate}T${endTimeStr}:00`,
         timeZone: 'Europe/Berlin',
       },
     }

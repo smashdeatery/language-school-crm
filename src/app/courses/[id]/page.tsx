@@ -22,7 +22,7 @@ const DAYS = ['monday','tuesday','wednesday','thursday','friday','saturday','sun
 
 interface Course {
   id: string; name: string; level: string; type: string
-  schedule_time: string; schedule_days: string[]; total_sessions: number
+  schedule_time: string; end_time: string | null; schedule_days: string[]; total_sessions: number
   start_date: string; materials: string | null; is_active: boolean
 }
 interface Session {
@@ -72,6 +72,7 @@ export default function CourseOverviewPage({ params }: { params: Promise<{ id: s
   const [editType, setEditType] = useState('')
   const [editDays, setEditDays] = useState<string[]>([])
   const [editTime, setEditTime] = useState('')
+  const [editEndTime, setEditEndTime] = useState('')
   const [editStartDate, setEditStartDate] = useState('')
   const [editTotalSessions, setEditTotalSessions] = useState('')
   const [editMaterials, setEditMaterials] = useState('')
@@ -181,6 +182,7 @@ export default function CourseOverviewPage({ params }: { params: Promise<{ id: s
     setEditType(course.type)
     setEditDays(course.schedule_days ?? [])
     setEditTime(course.schedule_time)
+    setEditEndTime(course.end_time ?? '')
     setEditStartDate(course.start_date)
     setEditTotalSessions(String(course.total_sessions))
     setEditMaterials(course.materials ?? '')
@@ -203,6 +205,7 @@ export default function CourseOverviewPage({ params }: { params: Promise<{ id: s
       type: editType,
       schedule_days: editDays,
       schedule_time: editTime,
+      end_time: editEndTime.trim() || null,
       start_date: editStartDate,
       total_sessions: parseInt(editTotalSessions) || 0,
       materials: editMaterials.trim() || null,
@@ -260,7 +263,8 @@ export default function CourseOverviewPage({ params }: { params: Promise<{ id: s
         course.name,
         course.level,
         course.schedule_time,
-        null
+        null,
+        course.end_time ?? null
       ).catch(() => {/* silently ignore */})
     }
 
@@ -495,8 +499,9 @@ export default function CourseOverviewPage({ params }: { params: Promise<{ id: s
               ))}
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <Input label="Time" type="time" value={editTime} onChange={e => setEditTime(e.target.value)} />
+          <div className="grid grid-cols-3 gap-3">
+            <Input label="Start Time" type="time" value={editTime} onChange={e => setEditTime(e.target.value)} />
+            <Input label="End Time" type="time" value={editEndTime} onChange={e => setEditEndTime(e.target.value)} />
             <Input label="Start Date" type="date" value={editStartDate} onChange={e => setEditStartDate(e.target.value)} />
           </div>
           <div className="grid grid-cols-2 gap-3">

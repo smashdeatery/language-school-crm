@@ -15,7 +15,8 @@ export async function syncSessionsToCalendar(
   courseName: string,
   courseLevel: string,
   scheduleTime: string,
-  teacherName: string | null
+  teacherName: string | null,
+  endTime?: string | null
 ): Promise<void> {
   const supabase = serviceClient()
 
@@ -24,6 +25,7 @@ export async function syncSessionsToCalendar(
       const eventId = await createCalendarEvent({
         sessionDate: s.session_date,
         scheduleTime,
+        endTime,
         courseName,
         courseLevel,
         teacherName,
